@@ -1,0 +1,56 @@
+# 练习场地：照着下面的教学版，把 docker-compose.yml 亲手敲出来
+# runeshop 本地开发环境
+# 用法：docker compose up -d 后台启动
+# 停止：docker compose down
+# 查看：docker compose ps
+# 停止并删除数据 docker compose down -v
+
+# services: 声明要跑哪些服务
+services:
+
+  # Postgres 数据库
+  postgres:
+    # image：用哪个镜像。postgres 官方 + 17 版本 + alpine（精简版，体积小）
+    image: postgres:17-alpine
+    # container_name：给容器起固定名字，方便 docker exec 操作
+    container_name: runeshop-postgres
+    # environment：环境变量。Postgres 镜像靠它们完成首次初始化
+    environment:
+      # 创建的用户名
+      POSTGRES_USER: runeshop
+      # 密码（本地开发用简单的就行）
+      POSTGRES_PASSWORD: runeshop
+      # 自动创建的数据库名
+      POSTGRES_DB: runeshop
+      # ports：端口映射 "宿主机:容器内"
+      # 应用在宿主机上通过 localhost:5432 连接容器里的 5432
+    ports:
+      - "5432:5432"
+      # volumes：把容器内数据目录挂到命名卷 pgdata 上
+      # 容器删除重建后数据还在（存在卷里，不随容器销毁）
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # healthcheck：健康检查，通过后容器才标记为 healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runeshop -d runeshop"]  # PG 自带的探测工具
+      interval: 5s   # 每 5 秒检查一次
+      timeout: 5s    # 单次检查超时 5 秒
+      retries: 10    # 连续失败 10 次才判定为不健康
+
+  #
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: runeshop-valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkeydata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  valkeydata:
