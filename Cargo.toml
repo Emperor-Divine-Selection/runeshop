@@ -1,3 +1,7 @@
+[workspace]
+members = ["migration"]
+resolver = "2"
+
 [package]
 name = "runeshop"
 version = "0.1.0"
@@ -6,7 +10,7 @@ edition = "2024"
 [dependencies]
 axum = "0.8.9"
 dotenvy = "0.15.7"
-sea-orm = "2.0.2"
+sea-orm = { version = "2.0.2", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
 serde = "1.0.229"
 serde_json = "1.0.151"
 tokio = { version = "1.53.1", features = ["full"] }
