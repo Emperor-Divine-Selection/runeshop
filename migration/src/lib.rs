@@ -10,6 +10,10 @@ mod m20260830_102617_create_spec_dims_table;
 mod m20260830_104216_create_spec_values_table;
 mod m20260830_110840_create_product_variants_table;
 mod m20260830_112446_create_variant_values_table;
+mod m20260830_153457_create_wallents_table;
+mod m20260830_154903_create_wallet_transactions_table;
+mod m20260830_160749_add_xp_to_users;
+mod m20260830_161223_create_xp_records_table;
 
 pub struct Migrator;
 
@@ -27,6 +31,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260830_104216_create_spec_values_table::Migration),
             Box::new(m20260830_110840_create_product_variants_table::Migration),
             Box::new(m20260830_112446_create_variant_values_table::Migration),
+            Box::new(m20260830_153457_create_wallents_table::Migration),
+            Box::new(m20260830_154903_create_wallet_transactions_table::Migration),
+            Box::new(m20260830_160749_add_xp_to_users::Migration),
+            Box::new(m20260830_161223_create_xp_records_table::Migration),
         ]
     }
 }
