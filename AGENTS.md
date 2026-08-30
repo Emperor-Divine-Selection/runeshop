@@ -57,13 +57,15 @@ runeshop/
 - [x] sea-orm migration：`migrate init` + workspace 整合 + `users` 表迁移成功（id/username/email/password_hash/created_at/updated_at）
 - [x] entity 生成：`sea-orm-cli generate entity -o src/model`（目录名可自定义，不必须叫 entity）
 - [x] 数据库连接验证：`Database::connect` + `Entity::find().count()` 跑通（users 表 0 行）
+- [x] git 推送到 GitHub：SSH 密钥 + 443 端口方案（`Emperor-Divine-Selection/runeshop`）
 
 ### 🚧 进行中 / 下一步
 
 - [ ] `main.rs` 完整化：Axum + 共享状态（AppState 传数据库连接）+ `/health` 接口
-- [ ] git 推送到 GitHub（HTTPS + token 认证，`Emperor-Divine-Selection/runeshop`）
+- [ ] 建 `orders` 表（外键 → users）和 `order_items` 表（外键 → orders/products）
 - [ ] valkey 连接验证（`PING` → `PONG`）
-- [ ] 业务建模（商品 / 订单 / 订单项）
+- [ ] store 层（数据访问封装）
+- [ ] cache 层（Valkey 缓存封装）
 
 ## 踩坑记录（重要教训）
 
@@ -91,6 +93,8 @@ runeshop/
 14. **Cargo workspace**：`migration/` 是独立 crate，根 Cargo.toml 需 `[workspace] members = ["migration"]`，否则 rust-analyzer 代码提示失灵
 15. **psql 分页器**：长输出显示 `--More--`，`q` 退出、空格翻页；可用 `-P pager=off` 关闭
 16. **连接超时排查顺序**：容器在跑吗（`docker compose ps`）→ 端口通吗 → URL 对吗
+17. **GitHub SSH 22 端口被墙**：改用 443 端口（`ssh.github.com:443`），写入 `~/.ssh/config`（Host github.com → HostName ssh.github.com / Port 443 / User git）
+18. **sea-orm-cli generate 只做一半**：自动加 `mod` 声明，但 `migrations()` 列表要手动注册，否则迁移被静默忽略（`migrate up` 成功但表没建）；生成后检查 `lib.rs`，用 `\dt` 兜底验证
 
 ## 约定
 

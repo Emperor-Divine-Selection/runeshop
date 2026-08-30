@@ -4,7 +4,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20260827_161407_create_products_table"
+        "m20260830_032511_create_orders_table"
     }
 }
 
@@ -14,15 +14,21 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table("products")
+                    .table("orders")
                     .if_not_exists()
                     .col(pk_auto("id"))
-                    .col(string("name").string_len(100))
-                    .col(text("description").null())
-                    .col(decimal("price").decimal_len(10, 2))
-                    .col(integer("stock").default(0)) // 库存
+                    .col(integer("user_id"))
+                    .col(string("status").string_len(20).default("pending"))
+                    .col(decimal("total_amount").decimal_len(10, 2))
                     .col(timestamp_with_time_zone("created_at").default(Expr::current_timestamp()))
                     .col(timestamp_with_time_zone("updated_at").default(Expr::current_timestamp()))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-orders-user_id")
+                            .from("orders", "user_id")
+                            .to("users", "id")
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
                     .to_owned(),
             )
             .await
@@ -30,7 +36,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table("products").to_owned())
+            .drop_table(Table::drop().table("orders").to_owned())
             .await
     }
 }

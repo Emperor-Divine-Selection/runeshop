@@ -4,7 +4,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20260827_161407_create_products_table"
+        "m20260830_104216_create_spec_values_table"
     }
 }
 
@@ -14,15 +14,18 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table("products")
+                    .table("spec_values")
                     .if_not_exists()
                     .col(pk_auto("id"))
-                    .col(string("name").string_len(100))
-                    .col(text("description").null())
-                    .col(decimal("price").decimal_len(10, 2))
-                    .col(integer("stock").default(0)) // 库存
-                    .col(timestamp_with_time_zone("created_at").default(Expr::current_timestamp()))
-                    .col(timestamp_with_time_zone("updated_at").default(Expr::current_timestamp()))
+                    .col(integer("dim_id"))
+                    .col(string("value").string_len(50))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-spec_values-dim_id")
+                            .from("spec_values", "dim_id")
+                            .to("spec_dims", "id")
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
                     .to_owned(),
             )
             .await
@@ -30,7 +33,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table("products").to_owned())
+            .drop_table(Table::drop().table("spec_values").to_owned())
             .await
     }
 }
