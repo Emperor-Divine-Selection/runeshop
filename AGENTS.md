@@ -58,14 +58,22 @@ runeshop/
 - [x] entity 生成：`sea-orm-cli generate entity -o src/model`（目录名可自定义，不必须叫 entity）
 - [x] 数据库连接验证：`Database::connect` + `Entity::find().count()` 跑通（users 表 0 行）
 - [x] git 推送到 GitHub：SSH 密钥 + 443 端口方案（`Emperor-Divine-Selection/runeshop`）
+- [x] 商品规格体系：spec_dims / spec_values / product_variants / variant_values（SPU-SKU 模型，N:N 中间表）
+- [x] 钱包体系：wallets（一人一钱包）+ wallet_transactions（流水）
+- [x] 经验体系：users.xp 列 + xp_records（经验流水）
+- [x] 会员体系：member_levels（字典表）+ user_memberships（关系表）
+- [x] 商户体系：merchants + merchant_accounts（敏感信息独立表）
+- [x] **数据层完工：15 张表全部 migrate + 测试数据写入**
+  - 表：users/products/orders/order_items/spec_dims/spec_values/product_variants/variant_values/wallets/wallet_transactions/xp_records/member_levels/user_memberships/merchants/merchant_accounts
+- [ ] store 层（数据访问封装）
 
 ### 🚧 进行中 / 下一步
 
-- [ ] `main.rs` 完整化：Axum + 共享状态（AppState 传数据库连接）+ `/health` 接口
-- [ ] 建 `orders` 表（外键 → users）和 `order_items` 表（外键 → orders/products）
-- [ ] valkey 连接验证（`PING` → `PONG`）
-- [ ] store 层（数据访问封装）
+- [ ] 重新生成全部 entity（15 张表的 model，当前 src/model 只有 users）
+- [ ] store 层（数据访问封装，Repository 模式）
 - [ ] cache 层（Valkey 缓存封装）
+- [ ] `main.rs` 完整化：Axum + 共享状态（AppState）+ `/health`
+- [ ] valkey 连接验证（`PING` → `PONG`）
 
 ## 踩坑记录（重要教训）
 

@@ -14,9 +14,53 @@ pub struct Model {
     pub password_hash: String,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+    pub avatar_url: Option<String>,
+    pub bio: Option<String>,
+    pub xp: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(has_one = "super::merchants::Entity")]
+    Merchants,
+    #[sea_orm(has_many = "super::orders::Entity")]
+    Orders,
+    #[sea_orm(has_many = "super::user_memberships::Entity")]
+    UserMemberships,
+    #[sea_orm(has_one = "super::wallets::Entity")]
+    Wallets,
+    #[sea_orm(has_many = "super::xp_records::Entity")]
+    XpRecords,
+}
+
+impl Related<super::merchants::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Merchants.def()
+    }
+}
+
+impl Related<super::orders::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Orders.def()
+    }
+}
+
+impl Related<super::user_memberships::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UserMemberships.def()
+    }
+}
+
+impl Related<super::wallets::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Wallets.def()
+    }
+}
+
+impl Related<super::xp_records::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::XpRecords.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -14,6 +14,10 @@ mod m20260830_153457_create_wallents_table;
 mod m20260830_154903_create_wallet_transactions_table;
 mod m20260830_160749_add_xp_to_users;
 mod m20260830_161223_create_xp_records_table;
+mod m20260831_160833_create_member_levels_table;
+mod m20260831_164256_create_user_memberships_table;
+mod m20260831_170308_create_merchants_table;
+mod m20260831_175558_create_merchant_accounts_table;
 
 pub struct Migrator;
 
@@ -35,6 +39,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260830_154903_create_wallet_transactions_table::Migration),
             Box::new(m20260830_160749_add_xp_to_users::Migration),
             Box::new(m20260830_161223_create_xp_records_table::Migration),
+            Box::new(m20260831_160833_create_member_levels_table::Migration),
+            Box::new(m20260831_164256_create_user_memberships_table::Migration),
+            Box::new(m20260831_170308_create_merchants_table::Migration),
+            Box::new(m20260831_175558_create_merchant_accounts_table::Migration),
         ]
     }
 }
