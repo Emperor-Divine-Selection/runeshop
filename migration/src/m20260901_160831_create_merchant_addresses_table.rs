@@ -4,7 +4,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20260831_create_merchants_table"
+        "m20260901_160831_create_merchant_addresses_table"
     }
 }
 
@@ -14,24 +14,23 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table("user_addresses")
+                    .table("merchant_addresses")
                     .if_not_exists()
                     .col(pk_auto("id"))
-                    .col(integer("user_id"))
-                    .col(string("recipient").string_len(50))
-                    .col(string("phone").string_len(20))
-                    .col(string("province").string_len(50)) // 拼写修正
+                    .col(integer("merchant_id").unique_key()) // 1:1，一店一址
+                    .col(string("province").string_len(50))
                     .col(string("city").string_len(50))
                     .col(string("district").string_len(50))
                     .col(string("detail").string_len(255))
-                    .col(boolean("is_default").default(false))
+                    .col(string("contact_name").string_len(50))
+                    .col(string("contact_phone").string_len(20))
                     .col(timestamp_with_time_zone("created_at").default(Expr::current_timestamp()))
                     .col(timestamp_with_time_zone("updated_at").default(Expr::current_timestamp()))
                     .foreign_key(
                         ForeignKey::create()
-                            .name("fk-user_addresses-users")
-                            .from("user_addresses", "user_id")
-                            .to("users", "id")
+                            .name("fk-merchant_addresses-merchant_id")
+                            .from("merchant_addresses", "merchant_id")
+                            .to("merchants", "id")
                             .on_delete(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
@@ -41,7 +40,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table("user_addresses").to_owned())
+            .drop_table(Table::drop().table("merchant_addresses").to_owned())
             .await
     }
 }

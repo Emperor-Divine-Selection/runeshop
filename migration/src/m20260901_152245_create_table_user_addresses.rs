@@ -4,7 +4,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20260831_create_merchants_table"
+        "m20260901_152245_create_table_user_addresses"
     }
 }
 
@@ -20,7 +20,7 @@ impl MigrationTrait for Migration {
                     .col(integer("user_id"))
                     .col(string("recipient").string_len(50))
                     .col(string("phone").string_len(20))
-                    .col(string("province").string_len(50)) // 拼写修正
+                    .col(string("province").string_len(50))
                     .col(string("city").string_len(50))
                     .col(string("district").string_len(50))
                     .col(string("detail").string_len(255))

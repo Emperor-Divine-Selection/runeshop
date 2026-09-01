@@ -3,28 +3,24 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "merchants")]
+#[sea_orm(table_name = "user_addresses")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    #[sea_orm(unique)]
     pub user_id: i32,
-    pub shop_name: String,
-    pub shop_logo: String,
-    pub contact_phone: i32,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub shop_description: Option<String>,
-    pub status: String,
+    pub recipient: String,
+    pub phone: String,
+    pub province: String,
+    pub city: String,
+    pub district: String,
+    pub detail: String,
+    pub is_default: bool,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_one = "super::merchant_accounts::Entity")]
-    MerchantAccounts,
-    #[sea_orm(has_one = "super::merchant_addresses::Entity")]
-    MerchantAddresses,
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::UserId",
@@ -33,18 +29,6 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Users,
-}
-
-impl Related<super::merchant_accounts::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::MerchantAccounts.def()
-    }
-}
-
-impl Related<super::merchant_addresses::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::MerchantAddresses.def()
-    }
 }
 
 impl Related<super::users::Entity> for Entity {

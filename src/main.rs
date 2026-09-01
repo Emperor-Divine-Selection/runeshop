@@ -1,5 +1,6 @@
 mod config;
 mod model;
+mod store;
 
 use config::Config;
 use sea_orm::{Database, EntityTrait, PaginatorTrait};

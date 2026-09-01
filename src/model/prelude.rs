@@ -2,6 +2,7 @@
 
 pub use super::member_levels::Entity as MemberLevels;
 pub use super::merchant_accounts::Entity as MerchantAccounts;
+pub use super::merchant_addresses::Entity as MerchantAddresses;
 pub use super::merchants::Entity as Merchants;
 pub use super::order_items::Entity as OrderItems;
 pub use super::orders::Entity as Orders;
@@ -9,6 +10,7 @@ pub use super::product_variants::Entity as ProductVariants;
 pub use super::products::Entity as Products;
 pub use super::spec_dims::Entity as SpecDims;
 pub use super::spec_values::Entity as SpecValues;
+pub use super::user_addresses::Entity as UserAddresses;
 pub use super::user_memberships::Entity as UserMemberships;
 pub use super::users::Entity as Users;
 pub use super::variant_values::Entity as VariantValues;

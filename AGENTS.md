@@ -65,6 +65,9 @@ runeshop/
 - [x] 商户体系：merchants + merchant_accounts（敏感信息独立表）
 - [x] **数据层完工：15 张表全部 migrate + 测试数据写入**
   - 表：users/products/orders/order_items/spec_dims/spec_values/product_variants/variant_values/wallets/wallet_transactions/xp_records/member_levels/user_memberships/merchants/merchant_accounts
+- [x] 性能索引：add_performance_indexes（8 个 btree 索引，外键列）
+- [x] 用户地址：user_addresses（1:N，is_default 应用层保证，不建部分索引）
+- [x] **数据层封顶：16 张业务表全部 migrate 完成**
 - [ ] store 层（数据访问封装）
 
 ### 🚧 进行中 / 下一步
