@@ -75,15 +75,16 @@ runeshop/
   - 查：find_by_id / find_by_name / find_by_email（one() 返 Option，查不到≠错误）
 - [x] 踩坑实录入册：见踩坑记录 19-23
 
-### 🚧 进行中 / 下一步
+### 🚧 进行中 / 下一步（自底向上：先把后端层盖完，再做 server）
 
-- [ ] store 层收尾：`user_store.rs` 里 update_xp_by_id 已删（xp 要与 xp_records 事务绑定，留待领域方法 add_xp）
-- [ ] store 层按需生长：列表/分页、count、事务方法（钱包/经验是首批候选）——等 server 层接口倒逼，不预写
-- [ ] 待查证：user_memberships 的 level_id 外键是否在迁移里漏建（实体 Relation 里只有 Users）
+- [ ] **store 层铺齐**：按领域建 store，把 16 张表的基础 CRUD 铺完（熟练度练习，规律同 UserStore）
+  - 领域分组：UserStore（users/user_addresses/user_memberships/xp_records）/ WalletStore（wallets/wallet_transactions）/ ProductStore（products/spec_dims/spec_values/product_variants/variant_values）/ OrderStore（orders/order_items）/ MerchantStore（merchants/merchant_accounts/merchant_addresses）
+  - 注意：字典表（member_levels/spec_dims/spec_values）读多写少，只配查就够，不配增删改
+- [ ] **复杂方法留白区**（铺齐 CRUD 后再评估）：列表/分页/count、事务方法（钱包扣款+流水、add_xp+流水是首批）、跨表 join 查询——做到哪层需要再写，不凭空预写
 - [ ] cache 层（Valkey 缓存封装，cache-aside：读→缓存 miss→查库→回填；写→写库→失效缓存）
-- [ ] `main.rs` 完整化：Axum + 共享状态（AppState 装 DatabaseConnection + 各 store）+ `/health` + 第一个真实接口 `GET /users/:id`
 - [ ] valkey 连接验证（`PING` → `PONG`）
-- [ ] merchant_addresses 表 AGENTS.md 之前的表清单里漏了，已补（17 张）
+- [ ] `main.rs` 完整化（**放最后**）：Axum + 共享状态（AppState 装 DatabaseConnection + 各 store + cache）+ `/health` + 第一个真实接口
+- [ ] 待查证：user_memberships 的 level_id 外键是否在迁移里漏建（实体 Relation 里只有 Users）
 
 ## 踩坑记录（重要教训）
 
