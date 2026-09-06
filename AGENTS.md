@@ -82,6 +82,12 @@ runeshop/
   - **charge（全项目第一个事务方法）**：begin() → 事务内查钱包(&txn 铁律) → 余额检查(不足则 early return 自动回滚) → 扣余额 → 插负数流水 → commit()
   - **deposit**：charge 的镜像（无余额检查、流水记正数、加法）
   - 事务设计决定：amount 参数约定传正数，内部扣款取负写流水；tx_type 暂用 &str，将来换枚举
+  - 两个事务方法已带参数守卫（amount <= 0 → InvalidInput）
+- [x] **StoreError 业务错误类型**（src/store/error.rs）
+  - 变体：NotFound / Business / InvalidInput / Conflict / Technical(DbErr)——技术错误与业务错误分家，将来 server 层按变体译成不同 HTTP 状态码，不用解析错误文本
+  - From<DbErr> 让 ? 自动把 DbErr 包成 Technical，store 方法体内的错误路径零改动
+  - Display 实现人类可读输出；**UserStore / WalletStore 全部方法已切到 Result<_, StoreError>**（查询方法保持 Option 表达“查不到≠错误”）
+  - 挂账：add_user 的 unique 冲突识别（→ Conflict）留待做注册接口时处理
 
 ### 🚧 进行中 / 下一步（自底向上：先把后端层盖完，再做 server）
 
