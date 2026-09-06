@@ -30,19 +30,18 @@ runeshop/
 ├── .env                    # 本地配置（不入 git）
 ├── AGENTS.md
 ├── Cargo.toml              # workspace：[workspace] members = ["migration"]
-├── migration/              # 独立 crate：数据库迁移
-│   ├── Cargo.toml          # sea-orm-migration（runtime-tokio-rustls + sqlx-postgres）
-│   └── src/
-│       ├── lib.rs          # Migrator 注册表
-│       └── m20220101_000001_create_table.rs  # users 表迁移
+├── migration/              # 独立 crate：数据库迁移（17 张表 + 性能索引）
 └── src/
-    ├── main.rs             # 入口：连接 DB + Axum 服务
+    ├── main.rs             # 入口：连接 DB + 验证查询（Axum 服务待加）
     ├── config/
-    │   └── mod.rs          # Config 结构体 + from_env 加载
-    └── model/
-        ├── mod.rs          # entity 模块声明
-        ├── prelude.rs      # 别名（Entity as Users）
-        └── users.rs        # users 实体（sea-orm-cli 自动生成）
+    │   └── mod.rs          # Config 结构体 + new() 加载
+    ├── model/              # entity 层：17 张表全部生成完毕（sea-orm-cli 自动）
+    │   ├── mod.rs          # entity 模块声明
+    │   ├── prelude.rs      # 别名（Entity as Users 等）
+    │   └── users.rs        # users 实体（含 Relation / Related / ActiveModelBehavior）
+    └── store/
+        ├── mod.rs          # store 模块声明
+        └── user_store.rs  # UserStore：users 表 CRUD（Repository 模式首个实例）
 ```
 
 ## 进度
@@ -67,16 +66,24 @@ runeshop/
   - 表：users/products/orders/order_items/spec_dims/spec_values/product_variants/variant_values/wallets/wallet_transactions/xp_records/member_levels/user_memberships/merchants/merchant_accounts
 - [x] 性能索引：add_performance_indexes（8 个 btree 索引，外键列）
 - [x] 用户地址：user_addresses（1:N，is_default 应用层保证，不建部分索引）
-- [x] **数据层封顶：16 张业务表全部 migrate 完成**
-- [ ] store 层（数据访问封装）
+- [x] **数据层封顶：16 张业务表全部 migrate 完成**（另有 merchant_addresses，共 17 张）
+- [x] **entity 全量重生成：17 张表 model 完成**（users/products/orders/order_items/spec_dims/spec_values/product_variants/variant_values/wallets/wallet_transactions/xp_records/member_levels/user_memberships/merchants/merchant_accounts/merchant_addresses/user_addresses）
+- [x] **store 层开工：UserStore 完成 users 表 CRUD**
+  - 增：add_user（ActiveModel + Set + ..Default::default()，数据库默认值接管 created_at 等）
+  - 删：delete_by_id / delete_by_username / delete_by_email（delete_many().filter().exec()）
+  - 改：update_username_by_id / update_password_hash_by_id / update_email_by_id / update_avatar_url_by_id / update_bio_by_id（查→into()→Set→update 四步流程）
+  - 查：find_by_id / find_by_name / find_by_email（one() 返 Option，查不到≠错误）
+- [x] 踩坑实录入册：见踩坑记录 19-23
 
 ### 🚧 进行中 / 下一步
 
-- [ ] 重新生成全部 entity（15 张表的 model，当前 src/model 只有 users）
-- [ ] store 层（数据访问封装，Repository 模式）
-- [ ] cache 层（Valkey 缓存封装）
-- [ ] `main.rs` 完整化：Axum + 共享状态（AppState）+ `/health`
+- [ ] store 层收尾：`user_store.rs` 里 update_xp_by_id 已删（xp 要与 xp_records 事务绑定，留待领域方法 add_xp）
+- [ ] store 层按需生长：列表/分页、count、事务方法（钱包/经验是首批候选）——等 server 层接口倒逼，不预写
+- [ ] 待查证：user_memberships 的 level_id 外键是否在迁移里漏建（实体 Relation 里只有 Users）
+- [ ] cache 层（Valkey 缓存封装，cache-aside：读→缓存 miss→查库→回填；写→写库→失效缓存）
+- [ ] `main.rs` 完整化：Axum + 共享状态（AppState 装 DatabaseConnection + 各 store）+ `/health` + 第一个真实接口 `GET /users/:id`
 - [ ] valkey 连接验证（`PING` → `PONG`）
+- [ ] merchant_addresses 表 AGENTS.md 之前的表清单里漏了，已补（17 张）
 
 ## 踩坑记录（重要教训）
 
@@ -105,7 +112,15 @@ runeshop/
 15. **psql 分页器**：长输出显示 `--More--`，`q` 退出、空格翻页；可用 `-P pager=off` 关闭
 16. **连接超时排查顺序**：容器在跑吗（`docker compose ps`）→ 端口通吗 → URL 对吗
 17. **GitHub SSH 22 端口被墙**：改用 443 端口（`ssh.github.com:443`），写入 `~/.ssh/config`（Host github.com → HostName ssh.github.com / Port 443 / User git）
-18. **sea-orm-cli generate 只做一半**：自动加 `mod` 声明，但 `migrations()` 列表要手动注册，否则迁移被静默忽略（`migrate up` 成功但表没建）；生成后检查 `lib.rs`，用 `\dt` 兜底验证
+18. **sea-orm-cli generate 只做一半**：自动加 `mod` 声明，但 `migrations()` 列表要手动注册，否则迁移被静默忽略（`migrate up` 成功但表没建）；生成后检查 `lib.rs`，用 `\dt` 兌底验证
+
+### Store 层 / sea-orm 实战
+
+19. **函数参数不能用裸 `str`**：str 是不定长类型（DST），函数参数编译期必须确定大小；`&str`（胖指针：起始地址+长度）才是“只读借用”的正确写法，调用方传 String/字面量都不被消耗
+20. **枚举变体用双冒号路径**：`Column` 是枚举类型，具体列是 `Column::Username`——`Column.eq(...)` 报 `expected value, found enum`；同套路还有 `Option::Some`、`Order::Desc`
+21. **ActiveModel 三态 + Set 不在 prelude**：Set(Some(v)) / Set(None) / 不碰（into() 自带的 Unchanged，UPDATE 不含该列）；`Set` 要手动 `use sea_orm::Set;`（prelude 只收高频通用项，缺 import 报 `cannot find in scope` 就补 use）
+22. **Option 字段写库要包一层**：数据库可空列（avatar_url/bio/xp）在 Model 里是 `Option<T>`，Set 时必须 `Set(Some(...))`；想写 NULL 用 `Set(None)`——不设字段 ≠ 写 NULL
+23. **复制粘贴是字段名 bug 的温床**：六个 update_xxx_by_id 复制后忘改字段名，全写成了 password_hash，且 cargo check 照样绿（类型恰好相同）——模板代码写完逐字段自查，能用参数化/收拢就不复制
 
 ## 约定
 
