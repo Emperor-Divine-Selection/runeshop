@@ -1,1 +1,2 @@
 pub mod user_store;
+pub mod wallet_store;

@@ -40,8 +40,9 @@ runeshop/
     │   ├── prelude.rs      # 别名（Entity as Users 等）
     │   └── users.rs        # users 实体（含 Relation / Related / ActiveModelBehavior）
     └── store/
-        ├── mod.rs          # store 模块声明
-        └── user_store.rs  # UserStore：users 表 CRUD（Repository 模式首个实例）
+        ├── mod.rs          # store 模块声明（user_store + wallet_store）
+        ├── user_store.rs  # UserStore：users 表 CRUD
+        └── wallet_store.rs # WalletStore：wallets + wallet_transactions（含事务方法 charge/deposit）
 ```
 
 ## 进度
@@ -74,12 +75,19 @@ runeshop/
   - 改：update_username_by_id / update_password_hash_by_id / update_email_by_id / update_avatar_url_by_id / update_bio_by_id（查→into()→Set→update 四步流程）
   - 查：find_by_id / find_by_name / find_by_email（one() 返 Option，查不到≠错误）
 - [x] 踩坑实录入册：见踩坑记录 19-23
+- [x] **WalletStore 完工**（wallets + wallet_transactions，7 个方法）
+  - create_for_user（一人一钱包，balance 初始 Decimal::ZERO；user_id 有 unique 约束，重复开钱包会 insert 报错——upsert 场景留待后续）
+  - find_by_id / find_by_user_id（双实体 import 用别名：Entity as Transactions / Model as TransactionModel / Column as TransactionsColumn）
+  - list_transactions（第一个 .all() 批量查，返 Vec<TransactionModel>，空结果=Ok(vec![])）
+  - **charge（全项目第一个事务方法）**：begin() → 事务内查钱包(&txn 铁律) → 余额检查(不足则 early return 自动回滚) → 扣余额 → 插负数流水 → commit()
+  - **deposit**：charge 的镜像（无余额检查、流水记正数、加法）
+  - 事务设计决定：amount 参数约定传正数，内部扣款取负写流水；tx_type 暂用 &str，将来换枚举
 
 ### 🚧 进行中 / 下一步（自底向上：先把后端层盖完，再做 server）
 
-- [ ] **store 层铺齐**：按领域建 store，把 16 张表的基础 CRUD 铺完（熟练度练习，规律同 UserStore）
-  - 领域分组：UserStore（users/user_addresses/user_memberships/xp_records）/ WalletStore（wallets/wallet_transactions）/ ProductStore（products/spec_dims/spec_values/product_variants/variant_values）/ OrderStore（orders/order_items）/ MerchantStore（merchants/merchant_accounts/merchant_addresses）
+- [ ] **store 层铺齐**：剩余 ProductStore（products/spec_dims/spec_values/product_variants/variant_values，5 张表最大）/ OrderStore（orders/order_items）/ MerchantStore（merchants/merchant_accounts/merchant_addresses）；UserStore 补 user_addresses/user_memberships/xp_records
   - 注意：字典表（member_levels/spec_dims/spec_values）读多写少，只配查就够，不配增删改
+  - 事务方法候选（领域方法，非单表 CRUD）：add_xp+流水（UserStore）、订单下单多表写入（OrderStore）
 - [ ] **复杂方法留白区**（铺齐 CRUD 后再评估）：列表/分页/count、事务方法（钱包扣款+流水、add_xp+流水是首批）、跨表 join 查询——做到哪层需要再写，不凭空预写
 - [ ] cache 层（Valkey 缓存封装，cache-aside：读→缓存 miss→查库→回填；写→写库→失效缓存）
 - [ ] valkey 连接验证（`PING` → `PONG`）
@@ -122,6 +130,12 @@ runeshop/
 21. **ActiveModel 三态 + Set 不在 prelude**：Set(Some(v)) / Set(None) / 不碰（into() 自带的 Unchanged，UPDATE 不含该列）；`Set` 要手动 `use sea_orm::Set;`（prelude 只收高频通用项，缺 import 报 `cannot find in scope` 就补 use）
 22. **Option 字段写库要包一层**：数据库可空列（avatar_url/bio/xp）在 Model 里是 `Option<T>`，Set 时必须 `Set(Some(...))`；想写 NULL 用 `Set(None)`——不设字段 ≠ 写 NULL
 23. **复制粘贴是字段名 bug 的温床**：六个 update_xxx_by_id 复制后忘改字段名，全写成了 password_hash，且 cargo check 照样绿（类型恰好相同）——模板代码写完逐字段自查，能用参数化/收拢就不复制
+24. **ActiveValue 不能直接做算术**：into() 后的 `wallet.balance + amount` 报 `cannot add ActiveValue<Decimal>`——裸值先算好再 into() 再 Set（"先算后装"），还能顺便避开 unwrap 拆包
+25. **glob import 撞名要靠别名**：两个模块的 `use xxx::*` 同时带进 Model/Entity/Column，报 `Model is ambiguous`——主实体 glob、次要实体用 `{self, Entity as Transactions, Model as TransactionModel, Column as XxxColumn}` 点名加别名
+26. **类型名必须大写开头**：Vec/Option/Result/自定义类型大写，小写开头是变量/函数，`vec` 写进类型位置直接报 `cannot find type`
+27. **金额一律 Decimal，没有字面量**：`Decimal::ZERO` / `Decimal::ONE`，一般金额从字符串 parse（`"19.99".parse::<Decimal>()`）；绝不用 f64 存金额（精度误差）
+28. **事务里的查询必须展开重写**：不能调 store 自带的 find_xxx（内部写死 &self.db），事务内所有 SQL 显式用 &txn；"先查后改"的领域方法将来可抽公共连接参数（&txn 或 &self.db）消除重复
+29. **构造器命名跟标准库**：Rust 无构造函数，惯例 `Type::new()`（String::new/Vec::new），init 在 Rust 语境里是"对已有实例初始化"，不是构造
 
 ## 约定
 
