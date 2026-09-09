@@ -21,6 +21,7 @@ mod m20260831_175558_create_merchant_accounts_table;
 mod m20260901_151407_add_performance_indexes;
 mod m20260901_152245_create_table_user_addresses;
 mod m20260901_160831_create_merchant_addresses_table;
+mod m20260907_154853_add_fk_user_memberships_level;
 
 pub struct Migrator;
 
@@ -49,6 +50,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260901_151407_add_performance_indexes::Migration),
             Box::new(m20260901_152245_create_table_user_addresses::Migration),
             Box::new(m20260901_160831_create_merchant_addresses_table::Migration),
+            Box::new(m20260907_154853_add_fk_user_memberships_level::Migration),
         ]
     }
 }

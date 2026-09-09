@@ -89,16 +89,18 @@ runeshop/
   - Display 实现人类可读输出；**UserStore / WalletStore 全部方法已切到 Result<_, StoreError>**（查询方法保持 Option 表达“查不到≠错误”）
   - 挂账：add_user 的 unique 冲突识别（→ Conflict）留待做注册接口时处理
 
+- [x] **补外键：user_memberships.level_id → member_levels.id**（迁移 m20260907_154853_add_fk_user_memberships_level，RESTRICT 保护字典表；原因：原建表迁移漏建了 level_id 外键，历史迁移不能改，只能追加新迁移）
+
 ### 🚧 进行中 / 下一步（自底向上：先把后端层盖完，再做 server）
 
-- [ ] **store 层铺齐**：剩余 ProductStore（products/spec_dims/spec_values/product_variants/variant_values，5 张表最大）/ OrderStore（orders/order_items）/ MerchantStore（merchants/merchant_accounts/merchant_addresses）；UserStore 补 user_addresses/user_memberships/xp_records
+- [ ] **store 层铺齐**：UserStore 补 user_addresses/user_memberships/xp_records；剩余 ProductStore（products/spec_dims/spec_values/product_variants/variant_values，5 张表最大）/ OrderStore（orders/order_items）/ MerchantStore（merchants/merchant_accounts/merchant_addresses）
   - 注意：字典表（member_levels/spec_dims/spec_values）读多写少，只配查就够，不配增删改
   - 事务方法候选（领域方法，非单表 CRUD）：add_xp+流水（UserStore）、订单下单多表写入（OrderStore）
 - [ ] **复杂方法留白区**（铺齐 CRUD 后再评估）：列表/分页/count、事务方法（钱包扣款+流水、add_xp+流水是首批）、跨表 join 查询——做到哪层需要再写，不凭空预写
 - [ ] cache 层（Valkey 缓存封装，cache-aside：读→缓存 miss→查库→回填；写→写库→失效缓存）
 - [ ] valkey 连接验证（`PING` → `PONG`）
 - [ ] `main.rs` 完整化（**放最后**）：Axum + 共享状态（AppState 装 DatabaseConnection + 各 store + cache）+ `/health` + 第一个真实接口
-- [ ] 待查证：user_memberships 的 level_id 外键是否在迁移里漏建（实体 Relation 里只有 Users）
+- [x] ~~待查证：user_memberships 的 level_id 外键是否在迁移里漏建~~（已实锤并修复，见上方“补外键”条目；后续会重新生成 entity 同步 Relation）
 
 ## 踩坑记录（重要教训）
 
