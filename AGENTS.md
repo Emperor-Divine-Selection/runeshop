@@ -75,10 +75,16 @@ runeshop/
   - 改：update_username_by_id / update_password_hash_by_id / update_email_by_id / update_avatar_url_by_id / update_bio_by_id（查→into()→Set→update 四步流程）
   - 查：find_by_id / find_by_name / find_by_email（one() 返 Option，查不到≠错误）
 - [x] **UserStore 领域拆分成型**（src/store/user_store/ 目录模块）
-  - mod.rs：UserStore struct + users 表方法（增删改查 9 个，含 add_user 的 Conflict 挂账注释）
+  - mod.rs：UserStore struct + users 表方法（增删改查 9 个，含 create_user 的 Conflict 挂账注释）
   - addresses.rs：list_addresses / add_address / delete_address / update_address（AddressUpdate 参数对象，patch 模式：Some 才 Set）/ set_default_address（事务：先清场 update_many + Condition::all，再上台；含越权校验）
-  - memberships.rs：已建待填（list_memberships / grant_membership）
+  - memberships.rs：list_memberships / grant_membership（流水表设计：同一等级可重复授予，granted_at 走数据库默认；查当前等级取最新一条——留待需要时写 find_current_membership）
+  - xp.rs：**add_xp 事务方法**（users.xp 更新 + xp_records 流水插入，同事务；xp 可空列用 unwrap_or(0) 当 0；流水只插不返回，主结果返更新后的 UsersModel）
   - 重构实录：impl 可跨文件但兄弟模块看不到私有字段（db 字段经历 私有→pub(crate)→回 mod.rs 恢复私有）；mod.rs 用 pub use 保持对外路径不变；最终形态 = struct 在 mod.rs、按功能域拆文件（社区主流：不为对称性拆，大到难受才拆）
+  - **UserStore 收官：4 张表（users/user_addresses/user_memberships/xp_records）17 个方法**
+- [x] **命名规范定调**（全 store 层统一）
+  - create_xxx（凭空造本体，如 create_user）/ create_for_宿主（造附属物，如 create_for_user）/ add_xxx（往集合添）/ set_xxx（设状态）
+  - find_by_xxx（单查返 Option）/ list_xxx（批量返 Vec，复数）/ update_xxx_by_id（多变体才带后缀）/ delete_by_xxx（同上）
+  - 全部方法补齐文档注释（一句话：干什么 + 查不到什么行为）；WalletStore 的 new 修为 pub；WalletStore 4 个欠账方法切 StoreError，两 store 错误语言统一
 - [x] 踩坑实录入册：见踩坑记录 19-23
 - [x] **WalletStore 完工**（wallets + wallet_transactions，7 个方法）
   - create_for_user（一人一钱包，balance 初始 Decimal::ZERO；user_id 有 unique 约束，重复开钱包会 insert 报错——upsert 场景留待后续）
