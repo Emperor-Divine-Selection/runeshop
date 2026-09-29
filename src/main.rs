@@ -1,5 +1,6 @@
 mod config;
 mod model;
+mod service;
 mod store;
 
 use config::Config;
