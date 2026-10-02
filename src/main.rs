@@ -1,16 +1,13 @@
+mod cache;
 mod config;
 mod handler;
 mod model;
+mod router;
 mod service;
 mod store;
 
-use axum::Router;
-use axum::routing::post;
 use config::Config;
 use sea_orm::Database;
-use tower_http::trace::TraceLayer;
-
-use handler::register::register_handler;
 
 #[tokio::main]
 async fn main() {
@@ -21,10 +18,7 @@ async fn main() {
         .await
         .expect("数据库连接失败");
 
-    let app = Router::new()
-        .route("/users", post(register_handler))
-        .layer(TraceLayer::new_for_http())
-        .with_state(db);
+    let app = router::app(db);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await
