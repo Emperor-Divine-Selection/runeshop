@@ -65,17 +65,31 @@ runeshop/
     │   ├── mod.rs
     │   ├── prelude.rs      # 别名（Entity as Users 等）
     │   └── users.rs        # users 实体
-    └── store/              # 存库层
-        ├── mod.rs          # 只放 pub mod 声明，一行一个，不写逻辑
-        ├── errors.rs       # StoreError（属 store 层）
-        └── user/
-            └── mod.rs      # users 表的方法
+    ├── store/              # 存库层：只管「数据怎么存」
+    │   ├── mod.rs          # 只放 pub mod 声明，一行一个，不写逻辑
+    │   ├── errors.rs       # StoreError（2 变体：NotFound / Technical）
+    │   └── user/
+    │       └── mod.rs      # users 表的方法
+    ├── service/            # 业务层：只管「业务规则怎么判」
+    │   ├── mod.rs
+    │   ├── errors.rs       # ServiceError（5 变体，业务错误在这里产生）
+    │   └── user.rs         # register：查重 + 编排 store
+    ├── handler/            # HTTP 层：只管「JSON 怎么进出」
+    │   ├── mod.rs
+    │   ├── errors.rs       # ApiError（把 ServiceError 翻成 HTTP 状态码）
+    │   └── register/
+    │       └── mod.rs      # handler + Request/Response DTO
+    └── cache/              # 缓存层：fred 封装（待建）
 ```
+
+**层级命名说明**：
+
+- `store/` `service/` **按实体**分（`user/` = users 表相关的所有操作）
+- `handler/` **按操作**分（`register/` = 注册这个接口）—— 一个实体会有多个 handler（register / login / update_profile），按操作分更清晰
 
 **后续规划**（用到才建，不预先造空目录）：
 
 ```
-src/server/     # HTTP 层：handler + Request/Response DTO + ApiError
 src/cache/      # 缓存层：fred 封装
 ```
 
@@ -102,7 +116,7 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 **代价**（都已接受）：
 - 编译期单态化，每种类型生成一份机器码 → 产物体积涨、编译变慢（sea-orm 自己就这么干）
 - 泛型参数推不出时需显式标注 `::<DatabaseConnection>`
-- **泛型挡不住"误传池"**（见踩坑 37），真正的防线是结构
+- **泛型挡不住"误传池"**（见踩坑 41），真正的防线是结构
 
 **⚠️ 选过的其他方案，记录否决理由：**
 
@@ -145,18 +159,40 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 - [x] 第二条迁移：`avatar` / `bio` 改可空（`Table::alter().modify_column(...).null()`，用 sea-query DSL 不写原生 SQL）
 - [x] `sea-orm-cli generate entity -o src/model` → `users.rs`（`avatar` / `bio` 确认为 `Option<String>`）
 - [x] 配置层：`src/config/mod.rs`（`Config::new()` 内部调 `dotenvy::dotenv()`）
-- [x] `src/store/errors.rs`：`StoreError` 五变体 + `Display`（`[变体名]` 前缀）+ `From<DbErr>`
 - [x] `.gitignore` 补 `*.env`（防密码入 git 历史）
+- [x] **store 层**：`find_by_username` / `find_by_email` / `create_user` + `NewUser` 入参 struct
+  - `create_user`：argon2 哈希（`hash_password` 自动带随机盐）+ ActiveModel + `Set`
+  - `avatar` / `bio` 走 `Set(data.avatar)` 透传，`None` 写 NULL
+  - `..Default::default()` 让 `id` / `create_time` / `update_time` 走数据库默认值
+  - 文档注释写明「不查重（查重是 service 层的业务规则）」
+- [x] **错误三层架构**（每层只管自己的语言，**展平转换不嵌套**）
+  - `StoreError`（`src/store/errors.rs`）2 变体：`NotFound` / `Technical` —— 只管存储
+  - `ServiceError`（`src/service/errors.rs`）5 变体 —— 业务错误在这里产生
+  - `ApiError`（`src/handler/errors.rs`）`Service(ServiceError)` + `IntoResponse` —— 翻成 HTTP
+  - 转换链：`DbErr → StoreError → ServiceError → ApiError → HTTP`，每层一个 `From` impl
+  - **为什么不嵌套**（`ServiceError::Store(StoreError)`）：嵌套会让 handler 的 match 变成三层 `ApiError::Service(ServiceError::Store(StoreError::Technical(e)))`，展平后只有两层
+- [x] **service 层**：`register`（username/email 查重 → 409；再编排 store 插库）
+- [x] **handler 层**：`src/handler/register/mod.rs`（`RegisterRequest` / `UserResponse` + handler）
+  - **脱敏**：`impl From<Model> for UserResponse` 里**故意不搬 `password_hash`**
+  - DTO 与 entity 分离：字段一改不会破 API 契约
+- [x] **`main.rs` 完整化**：`Router` + `TraceLayer` + `.with_state(db)` + `axum::serve`
+  - 顺序不能错：`route` → `layer` → `with_state`
+  - `DatabaseConnection` 本身已 `Clone`，**不需要 `AppState` 结构体**（见踩坑 43）
+  - `tracing_subscriber::fmt::init()` 必须在挂 `TraceLayer` 之前，否则 TraceLayer 是哑巴
+- [x] **端到端实测通过**：`POST /users` → 201 Created
+  - `password_hash = $argon2id$v=19$m=19456,...`（argon2id，非明文）
+  - `avatar` / `bio` 返回 `null`（`Set(None)` → NULL 生效）
+  - `create_time` 由数据库默认值填充（`..Default::default()` 生效）
 
 ### 🚧 进行中 / 下一步（线性竖切：一次一条链路）
 
-- [ ] **store 第一刀**：`find_by_username` / `find_by_email`（泛型 `C: ConnectionTrait` 签名）
-- [ ] **store 第二刀**：`create_user`（ActiveModel + `Set`，avatar/bio 走 `Set(None)` 验证可空写入）
-- [ ] **server 层**：`src/server/` + `ApiError`（`StoreError` 变体 → HTTP 状态码映射）
-- [ ] **第一个真实接口**：`POST /users` 注册（校验 → argon2 哈希 → 先查后插判 409 → 201 + 脱敏 DTO）
-  - 决策已定：先查后插（不解析 DB 错误文本）/ DTO 脱敏（不返 password_hash）/ 201 Created
-- [ ] `/health` 接口 + `TraceLayer`（`tower-http` 装了还没用）
+- [ ] **`GET /users/{id}`** —— 用上零使用的 `NotFound` 变体，走通「`Option` → 404」路径，顺便验证 axum 路径参数（`Path<i32>`）
+- [ ] **补输入校验**：密码长度 / 邮箱格式，让 `InvalidParams` 变体用起来（现在 `{"password":"1"}` 也能注册成功）
+- [ ] **登录接口**：`verify_password`（与 `hash_password` 反向）+ 发 token（JWT 或 session + fred）
+  - ⚠️ 登录的错误消息**必须模糊**（「用户名或密码错误」），防用户名枚举（见踩坑 51）
 - [ ] cache 层（fred，cache-aside：读→miss→查库→回填；写→写库→失效缓存）
+- [ ] `GET /users` 列表（会碰到分页这个大话题）
+- [ ] `GET /health` 接口（调接口时先确认服务活着）
 
 ## 踩坑记录（重要教训）
 
@@ -225,22 +261,45 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
     - **防线 2（命名）**：事务块内不出现 `db` 这个词，变量命名 `txn`，看到 `&db` 就是 smell
 42. **`DatabaseConnection` 本身就是连接池**：`Pool<DB>(Arc<PoolInner<DB>>)`，`#[derive(Clone)]`。`db.clone()` 只是引用计数 +1，不新建连接、不复制数据。所以 AppState 到处传 db 零成本
 43. **AppState 只有 `db` 一个字段时是空壳**：`DatabaseConnection` 本身已 `Clone`，axum 直接 `.with_state(db)` 就够。等 `cache`（fred client）/ `config` 加进来再抽 struct 才回本
-44. **层依赖方向**：`server`（外层）依赖 `store`（内层）。反过来的信号是**某个内层模块 import 了 AppState** —— 立刻警惕
+44. **层依赖方向**：`handler`（外层）→ `service` → `store`（内层）→ `model`。反过来的信号是**某个内层模块 import 了外层的东西** —— 立刻警惕
 
 ### 错误处理
 
-45. **错误类型按层归属**：`StoreError` 属 store 层（`src/store/errors.rs`），`ApiError` 属 web 层（`src/server/`）。`ApiError` 包装 `StoreError`（`From` 自动转），方向是 web → store，本来就对
-46. **错误变体要带 payload**：`NotFound(String)` 而不是光秃秃的 `NotFound` —— 否则只能说"目标资源未找到"，说不出缺哪个。前五个变体（除 `Technical` 包 `DbErr`）统一带 `String`
-47. **`Display` 用 `[变体名]` 前缀 + payload 写完整句子**：`write!(f, "[Conflict] {msg}")`。前缀负责分类（日志可 grep），payload 负责细节，**不要重复分类词**（`[Conflict] 冲突：xxx` 是废话）
-48. **`From<DbErr>` 让 `?` 自动包装**：store 方法体内的 DB 错误路径零改动。但 sea-orm 的 `one()` 返 `Result<_, DbErr>`，仍需 `.map_err(StoreError::from)` 才能交给 `?`
+45. **错误类型按层归属（各层只说自己的语言）**
+
+    | 错误类型 | 文件 | 变体 | 只管什么 |
+    |---|---|---|---|
+    | `StoreError` | `store/errors.rs` | `NotFound` / `Technical` | 存储（2 个够了，其余是业务概念） |
+    | `ServiceError` | `service/errors.rs` | + `Business` / `InvalidParams` / `Conflict` | 业务规则 |
+    | `ApiError` | `handler/errors.rs` | `Service(ServiceError)` | HTTP 状态码 |
+
+    **为什么 store 只有 2 个变体**：`Conflict`（用户名重复）是 service 判定的 —— store 只负责「这行插进去没有」，它不知道什么叫「用户名」。实际写代码时发现 `Conflict` 全在 service 层构造，store 一次没用过，于是把业务变体上移。
+46. **展平转换，不嵌套**：`ServiceError::Technical(DbErr)` 直接持有 sea-orm 的错误，**不**写 `ServiceError::Store(StoreError)`。嵌套会让 handler 的 match 变成三层 `ApiError::Service(ServiceError::Store(StoreError::Technical(e)))` —— 展平后只有两层。
+47. **错误变体要带 payload**：`NotFound(String)` 而不是光秃秃的 `NotFound` —— 否则只能说「目标资源未找到」，说不出缺哪个。除 `Technical` 包 `DbErr` 外统一带 `String`
+48. **`Display` 用 `[变体名]` 前缀 + payload 写完整句子**：`write!(f, "[Conflict] {msg}")`。前缀负责分类（日志可 grep），payload 负责细节，**不要重复分类词**（`[Conflict] 冲突：xxx` 是废话）。三个错误类型都遵守这条
+49. **`From` 只包装、不拆解；`IntoResponse` 才 match**：`From<StoreError> for ServiceError` 一行 `Self::Store(value)` 即可，**不要在这里 match 每个变体** —— 变体→状态的映射写在 `IntoResponse` 里。两件事分两个地方做
+50. **⚠️ 拼写错误只要前后一致就能编译**：变体名 `Bussiness`（多了个 s）+ Display 字符串 `"[Bussiness]"` 三处一致，`cargo check` 全绿、运行时也正常。编译器只管「这个名字存不存在」，不管拼得对不对 —— 只能靠 `grep '\[Business\]'` 搜不到日志时发现。**这是踩坑 23（复制粘贴字段名 bug）的姊妹篇**
+51. **⚠️ 登录的错误消息必须模糊**：注册接口返「用户名 x 已被占用」「邮箱 y 已被注册」可以接受（用户自己填的，反馈清楚有用）；但**登录绝不能这样** —— 那等于告诉攻击者「这个用户名存在 / 这个邮箱注册过」，拿邮箱列表就能撞库。统一回「用户名或密码错误」
+52. **⚠️ 先查后插有 TOCTOU 竞态**：两个并发请求用同一个 username，两边 `find_by_username` 都返 `None` 都通过查重，然后一个 INSERT 成功、另一个撞 unique 约束 → `DbErr::Exec` → 被 `From` 包成 `Technical` → **返 500 而不是 409**。低并发下够用，但这是**已知缺陷**不是 bug-free。两条修法：① 捕获 `DbErr::Exec` 判断 unique violation（要解析错误信息）② `INSERT ... ON CONFLICT DO NOTHING` + 检查影响行数（不解析错误文本，更干净）
+53. **`Conflict`(409) vs `InvalidParams`(422) 的分界**：**422 = 「你发的东西本身有问题」**（格式、长度、类型）；**409 = 「你发的东西没问题，但当前状态不接受它」**（重复、撞约束、状态机不对）。将来「订单已支付不能取消」也是 `Conflict`
+
+### handler / axum
+
+54. **`?` 在尾部表达式位置要配 `Ok(...)`**：返回 `Result<T, E>` 的函数，尾部只有两种写法 —— ① 尾部表达式本身类型就是 `Result<T, E>`（错误类型**正好**是 E）② `Ok(expr?)`（靠 `?` 转换 + `Ok` 补壳）。`create_user(db, data).await` 类型是 `Result<Model, StoreError>` 而签名要 `Result<Model, ServiceError>` → 不匹配；`create_user(db, data).await?` 尾部类型是 `Model` → 也缺壳。**两个缺一不可**
+55. **`match` 的左边会「顺手起变量」**：`Self::Store(StoreError::Conflict(msg))` 里的 `msg` 是模式的一部分 —— 它既在**测试形状**（我要 self 长这样）又在**绑定值**（把里面的 String 叫这个名字）。所以右边才能用 `msg`。加上 `let (status, message) = match ... { ... };` 是**两件独立的事**：match 选一个元组出来，let 再把元组拆成两个变量
+56. **Rust 从外往里读方法链**：行尾的 `.into_response()` 作用在它**前面完整的表达式**上 —— `(status, Json(...)).into_response()` 是对**整个元组**调用，不是只对 `Json` 调用。看不懂时先往上找括号边界
+57. **axum 的 `Json` 提取器自带错误码**：JSON 合法但字段不匹配 → **422**（`JsonDataError`）；JSON 语法错 → 400；缺 `Content-Type: application/json` → **415**。这三个不用自己写
+58. **`Router` 方法顺序不能错**：`route()` → `layer()` → `with_state()`。`with_state` 必须最后（它终结 builder 链），`layer` 必须在 route 之后（否则拦不到路由）
 
 ## 约定
 
 - 镜像名 / 服务名 / 容器名一律小写
 - 目录 / 模块 / 文件 / 函数一律 `snake_case`；类型 `UpperCamelCase`
-- 依赖一律用 `cargo add`，不手写 Cargo.toml 版本
+- **目录名单数**：`user/` 不是 `users/`（`register/` 不是 `registers/`）
+- **依赖一律用 `cargo add`**，不手写 Cargo.toml 版本
 - 能用 sea-query DSL 表达的，**不手写原生 SQL**（原生 SQL 换库即废、拼错编译期不报错）
 - 历史迁移**不能改**，只能追加新迁移
+- **API 出参一律用 DTO，绝不把 entity 直接当 JSON 契约**（`password_hash` 会泄露；字段一改就破接口）
 - 本地开发凭据（`runeshop`/`runeshop`）仅限本地，上线前必须换成环境变量注入
 - `.env` 不入 git（`.gitignore` 已加 `*.env`）
 - 代码保持格式化后再保存（Zed 已开 `format_on_save`）
