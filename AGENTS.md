@@ -79,19 +79,48 @@ runeshop/
     │   ├── errors.rs       # ApiError（把 ServiceError 翻成 HTTP 状态码）
     │   └── register/
     │       └── mod.rs      # handler + Request/Response DTO
-    └── cache/              # 缓存层：fred 封装（待建）
+    ├── router/             # 路由层：只管「哪个 URL 走哪个 handler」
+    │   └── mod.rs          # app(db) -> Router，组装全部路由 + 中间件
+    └── cache/              # 缓存层：fred 封装（空壳，待建）
 ```
 
-**层级命名说明**：
-
-- `store/` `service/` **按实体**分（`user/` = users 表相关的所有操作）
-- `handler/` **按操作**分（`register/` = 注册这个接口）—— 一个实体会有多个 handler（register / login / update_profile），按操作分更清晰
-
-**后续规划**（用到才建，不预先造空目录）：
+**依赖方向（单向向下，不可倒置）**：
 
 ```
-src/cache/      # 缓存层：fred 封装
+main.rs（组合根：只管进程生命周期）
+  ↓
+router/   组装路由（知道所有 handler，不含业务）
+  ↓
+handler/  JSON 进出（DTO、脱敏、错误 → HTTP 状态码）
+  ↓
+service/  业务规则（查重、状态判定、跨 store 编排）
+  ↓
+store/    数据存取（哈希、SQL、列格式）
+  ↓
+model/    entity（sea-orm 自动生成）
 ```
+
+**反过来的信号是某个内层模块 import 了外层的东西** —— 立刻警惕。
+
+### ★ 层内组织的命名规律
+
+| 位置 | 形态 | 例子 |
+|---|---|---|
+| **层的直属文件** | 扁平放，与 `mod.rs` 同级 | `service/errors.rs`、`store/errors.rs` |
+| **按实体/操作分组的子集合** | 建子目录 | `store/user/`、`handler/register/` |
+| **层本身是容器** | 直接建目录 | `router/`、`cache/` |
+
+- `src/router.rs` 和 `src/router/mod.rs` **对 `mod router;` 完全等价**（见踩坑 9）—— 两种形态随时可互换，调用方零改动
+- 目录名单数：`user/` 不是 `users/`，`register/` 不是 `registers/`
+- **例外登记**：`cache/mod.rs` 是 0 字节空壳（与「用到才建」原则有出入）。已记为待建项 —— 写第一个缓存方法时填内容，或直接删掉目录
+
+### 各层的划分依据
+
+| 层 | 分法 | 理由 |
+|---|---|---|
+| `store/` `service/` | **按实体**（`user/` = users 表相关的所有操作） | 同一实体的存取和业务规则天然在一起 |
+| `handler/` | **按操作**（`register/` = 注册这个接口） | 一个实体会有多个 handler（register / login / update_profile），按操作分更清晰 |
+| `router/` | 暂时只有 `mod.rs`，未来按实体拆 | 路由是「URL → handler」的映射，实体多了再拆（用 `.merge()` 拼） |
 
 ## 架构决策
 
@@ -183,6 +212,12 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
   - `password_hash = $argon2id$v=19$m=19456,...`（argon2id，非明文）
   - `avatar` / `bio` 返回 `null`（`Set(None)` → NULL 生效）
   - `create_time` 由数据库默认值填充（`..Default::default()` 生效）
+- [x] **抽出 `router/` 层**：`src/router/mod.rs` 的 `app(db) -> Router`
+  - 动机：`main.rs` 原本混着「进程生命周期」和「HTTP 装配」两件事
+  - `TraceLayer` 放在 `app()` 里 → 返回的是**套好中间件的完整 Router**，`main.rs` 零 HTTP 知识
+  - `main.rs` 从 37 行降到 29 行，净减 4 行 import（`axum::Router` / `routing::post` / `TraceLayer` / `register_handler` 全部搬走）
+  - 剩下的全是进程生命周期：init 日志 → 读 Config → 连库 → 装配 → 绑端口 → serve
+  - 生长路径：路由超 3 组实体时 `router/` 下按实体拆 `user.rs` / `auth.rs`，用 `.merge()` 拼，`main.rs` 零改动
 
 ### 🚧 进行中 / 下一步（线性竖切：一次一条链路）
 
@@ -290,6 +325,8 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 56. **Rust 从外往里读方法链**：行尾的 `.into_response()` 作用在它**前面完整的表达式**上 —— `(status, Json(...)).into_response()` 是对**整个元组**调用，不是只对 `Json` 调用。看不懂时先往上找括号边界
 57. **axum 的 `Json` 提取器自带错误码**：JSON 合法但字段不匹配 → **422**（`JsonDataError`）；JSON 语法错 → 400；缺 `Content-Type: application/json` → **415**。这三个不用自己写
 58. **`Router` 方法顺序不能错**：`route()` → `layer()` → `with_state()`。`with_state` 必须最后（它终结 builder 链），`layer` 必须在 route 之后（否则拦不到路由）
+59. **抽 router 层后 `main.rs` 应该零 HTTP 知识**：`TraceLayer` 这类中间件放在 `app()` 内部，`main.rs` 只剩「init 日志 → 读 Config → 连库 → 装配 → 绑端口 → serve」。判据：`main.rs` 里除 `router::app(db)` 那一行之外不该出现任何 axum / tower 类型
+60. **空的占位层要标在文档里**：`cache/mod.rs` 目前 0 字节，`Config.valkey_url` 已读进来但无人使用，fred 依赖装了零引用。文档写明「空壳，待建」比假装它不存在好 —— 免得下次以为是已完成的活
 
 ## 约定
 
