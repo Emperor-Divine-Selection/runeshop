@@ -218,13 +218,21 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
   - `main.rs` 从 37 行降到 29 行，净减 4 行 import（`axum::Router` / `routing::post` / `TraceLayer` / `register_handler` 全部搬走）
   - 剩下的全是进程生命周期：init 日志 → 读 Config → 连库 → 装配 → 绑端口 → serve
   - 生长路径：路由超 3 组实体时 `router/` 下按实体拆 `user.rs` / `auth.rs`，用 `.merge()` 拼，`main.rs` 零改动
+- [x] **补全注册规则**（`InvalidParams` 终于用上了）
+  - 抽出 `validate()` + `MIN_PASSWORD_LEN` 常量；顺序：**归一化 → 校验（不碰 DB）→ 查重（查两次库）→ 入库**
+  - 规则：用户名非空 / 邮箱正则（顶级域名 ≥2 字母）/ 密码 `chars().count() >= 8`
+  - **归一化**：`trim()` + `to_lowercase()` 作用于 `username` 和 `email`，**检查/查重/入库三处都用归一化后的值**
+  - 邮箱正则用 `static RE: LazyLock<Regex>` 包一层，全局只编译一次
+  - 实测：422（空用户名/邮箱格式错/`a@b.c`/密码 7 位/4 个汉字）、201（带首尾空格+大小写混写）、409（用户名或邮箱重复）全部通过
+  - ⚠️ 归一化只对新写入生效 —— 库里已有 `alice` + `ALICE` 脏数据，见踩坑 61
 
 ### 🚧 进行中 / 下一步（线性竖切：一次一条链路）
 
 - [ ] **`GET /users/{id}`** —— 用上零使用的 `NotFound` 变体，走通「`Option` → 404」路径，顺便验证 axum 路径参数（`Path<i32>`）
-- [ ] **补输入校验**：密码长度 / 邮箱格式，让 `InvalidParams` 变体用起来（现在 `{"password":"1"}` 也能注册成功）
 - [ ] **登录接口**：`verify_password`（与 `hash_password` 反向）+ 发 token（JWT 或 session + fred）
   - ⚠️ 登录的错误消息**必须模糊**（「用户名或密码错误」），防用户名枚举（见踩坑 51）
+  - ⚠️ 登录查重必须做和注册一样的 `trim()` + `to_lowercase()`（见踩坑 62）
+  - `Business` 变体至今零使用 —— 登录的「用户名或密码错误」正是它的用武之地
 - [ ] cache 层（fred，cache-aside：读→miss→查库→回填；写→写库→失效缓存）
 - [ ] `GET /users` 列表（会碰到分页这个大话题）
 - [ ] `GET /health` 接口（调接口时先确认服务活着）
@@ -327,6 +335,20 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 58. **`Router` 方法顺序不能错**：`route()` → `layer()` → `with_state()`。`with_state` 必须最后（它终结 builder 链），`layer` 必须在 route 之后（否则拦不到路由）
 59. **抽 router 层后 `main.rs` 应该零 HTTP 知识**：`TraceLayer` 这类中间件放在 `app()` 内部，`main.rs` 只剩「init 日志 → 读 Config → 连库 → 装配 → 绑端口 → serve」。判据：`main.rs` 里除 `router::app(db)` 那一行之外不该出现任何 axum / tower 类型
 60. **空的占位层要标在文档里**：`cache/mod.rs` 目前 0 字节，`Config.valkey_url` 已读进来但无人使用，fred 依赖装了零引用。文档写明「空壳，待建」比假装它不存在好 —— 免得下次以为是已完成的活
+
+### 归一化与校验（register 的实战）
+
+61. **⚠️ 加归一化规则不改历史数据 → 库里留下脏数据**：给 `username` / `email` 加 `to_lowercase()` 后，**规则只对新写入生效**。旧数据原样躺着 —— 实测库里同时存在 `alice` 和 `ALICE`，而查重只认小写，于是新注册 `ALICE` 会撞上已有的 `alice` 但库里的历史 `ALICE` 永远占着坑
+    - 修法（本地/测试库）：`DELETE FROM users WHERE username != lower(username)`
+    - 修法（真库）：追加迁移 `UPDATE users SET username = lower(username)` —— **但可能撞 unique 约束**，得先`SELECT` 探明哪些会撞、合并还是改名
+    - 教训：归一化规则的变更和 schema 变更一样，**必须配一条迁移**，不能只改代码
+62. **⚠️ 归一化必须在所有入口统一做**：注册时做了 `trim()` + `to_lowercase()`，**将来登录查重必须做一模一样的处理**，否则用户输 `Alice` 登不上（库里存的是 `alice`）。凡是「写的时候归一化」，所有读路径都得跟上
+63. **`chars().count()` 数字符不是字节**：`"密码密码"` 是 4 个字符（8 字节），`len()` 会算成 8 从而误放行，`chars().count()` 算 4 正确拒绝。反过来汉字在「至少 8 位」的规则下天然占便宜（8 个汉字 ≈ 英文 16+ 字符强度）—— 这是取舍不是 bug
+64. **⚠️ 布尔判断写反编译器抓不到**：`if is_valid_email(x) { return Err("格式不正确") }` —— 逻辑正好颠倒，合法邮箱被拒、垃圾邮箱放行，而 `bool` 类型合法所以编译全绿。**同类：踩坑 50（拼写一致就能编译）**。写完 `if` 条件后**逐条代入正常值和异常值各验一遍**
+65. **正则永远不要在循环里编译**：`Regex::new` 要几微秒到几毫秒。官方推荐用 `static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"...").unwrap())` —— `static` 定义在函数内部也行，全局只初始化一次
+66. **⚠️ 用户输入绝不能当正则**：`Regex::new(用户输入)` 会因非法语法 panic，那是 DoS 攻击面。`.unwrap()` 只在「模式是手写常量」时安全
+67. **Rust 的 `regex` 不支持反向引用和环视**（`\1`、`(?=...)`）：这是**有意的取舍** —— 该库用有限自动机保证线性时间，不可能出现「灾难性回溯」，而 JS/Java 的正则能写出 `(a+)+$` 这种指数级 DoS。代价是某些模式要换个思路写
+68. **邮箱正则只能验格式，验不了存在性**：`notreal@gmail.com` 格式合法但邮箱不存在。正则挡住的只是 `abc`、`a@b`、`@x.com` 这类明显笔误。**要真验证必须发验证码 + 加 `email_verified` 字段**（现在项目里没做，是有意为之）
 
 ## 约定
 

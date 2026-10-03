@@ -2071,6 +2071,7 @@ dependencies = [
  "axum",
  "dotenvy",
  "fred",
+ "regex",
  "sea-orm",
  "serde",
  "serde_json",
