@@ -4,10 +4,16 @@ mod handler;
 mod model;
 mod router;
 mod service;
+mod state;
 mod store;
 
 use config::Config;
+use fred::{
+    interfaces::ClientLike,
+    prelude::{Client as ValKeyClent, Config as ValKeyConfig},
+};
 use sea_orm::Database;
+use state::AppState;
 
 #[tokio::main]
 async fn main() {
@@ -18,7 +24,12 @@ async fn main() {
         .await
         .expect("数据库连接失败");
 
-    let app = router::app(db);
+    let cache_config = ValKeyConfig::from_url(&cfg.valkey_url).expect("未找到缓存地址");
+    let cache = ValKeyClent::new(cache_config, None, None, None);
+    cache.connect().await.expect("缓存连接失败");
+
+    let state = AppState { db, cache };
+    let app = router::app(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await

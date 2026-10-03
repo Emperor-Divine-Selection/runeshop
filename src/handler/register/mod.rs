@@ -1,7 +1,8 @@
 use axum::{Json, extract::State, http::StatusCode};
-use sea_orm::{DatabaseConnection, prelude::*};
+use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::state::AppState;
 use crate::model::users::Model;
 use crate::service::user::register;
 use crate::store::user::NewUser;
@@ -42,13 +43,13 @@ impl From<Model> for UserResponse {
     }
 }
 
-/// POST /users —— 注册；用户名/邮箱重复返回 409
+/// POST /register —— 注册；用户名/邮箱重复返回 409
 pub async fn register_handler(
-    State(db): State<DatabaseConnection>,
+    State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<UserResponse>), ApiError> {
     let model = register(
-        &db,
+        &state.db,
         NewUser {
             username: req.username,
             password: req.password,
