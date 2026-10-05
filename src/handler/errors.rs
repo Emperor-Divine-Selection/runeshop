@@ -22,7 +22,10 @@ impl IntoResponse for ApiError {
                 (StatusCode::UNPROCESSABLE_ENTITY, msg)
             }
             Self::Service(ServiceError::Conflict(msg)) => (StatusCode::CONFLICT, msg),
-            Self::Service(ServiceError::Technical(e)) => {
+            Self::Service(ServiceError::Database(e)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+            Self::Service(ServiceError::Cache(e)) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }
         };

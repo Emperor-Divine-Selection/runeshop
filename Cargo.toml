@@ -11,6 +11,8 @@ argon2 = "0.6.0"
 axum = "0.8.9"
 dotenvy = "0.15.7"
 fred = "10.1.0"
+hex = "0.4.3"
+rand = "0.10.3"
 regex = "1.13.1"
 sea-orm = { version = "2.0.3", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
 serde = { version = "1.0.229", features = ["derive"] }
