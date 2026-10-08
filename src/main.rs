@@ -26,7 +26,13 @@ async fn main() {
 
     let cache_config = ValKeyConfig::from_url(&cfg.valkey_url).expect("未找到缓存地址");
     let cache = ValKeyClent::new(cache_config, None, None, None);
-    cache.connect().await.expect("缓存连接失败");
+    // connect() 只是「后台启动连接任务」，返回的 ConnectHandle 要等连接【关闭】才 resolve，
+    // 所以绝对不能 await 它 —— 会永久挂起。wait_for_connect() 才是「等连上」。
+    cache.connect();
+    cache
+        .wait_for_connect()
+        .await
+        .expect("缓存连接失败");
 
     let state = AppState { db, cache };
     let app = router::app(state);
