@@ -2,9 +2,9 @@ use axum::{Json, extract::State, http::StatusCode};
 use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::state::AppState;
 use crate::model::users::Model;
 use crate::service::user::register;
+use crate::state::AppState;
 use crate::store::user::NewUser;
 
 use super::errors::ApiError;

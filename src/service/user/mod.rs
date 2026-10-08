@@ -3,11 +3,33 @@ use sea_orm::ConnectionTrait;
 use std::sync::LazyLock;
 
 use crate::{
+    cache::token::{generate, save},
     model::users::Model,
-    store::user::{NewUser, create_user, find_by_email, find_by_username},
+    store::user::{NewUser, create_user, find_by_email, find_by_username, verify_password},
 };
 
-use super::errors::ServiceError;
+use crate::service::errors::ServiceError;
+
+/// 用户登陆
+pub async fn login<C: ConnectionTrait>(
+    db: &C,
+    cache: &fred::clients::Client,
+    username: &str,
+    password: &str,
+) -> Result<String, ServiceError> {
+    let username = username.trim().to_lowercase();
+
+    let Some(user) = find_by_username(db, &username).await? else {
+        return Err(ServiceError::Business("用户名或密码错误".into()));
+    };
+    if !verify_password(&user.password_hash, password).await {
+        return Err(ServiceError::Business("用户名或密码错误".into()));
+    };
+
+    let token = generate();
+    save(cache, &token, user.id, None).await?;
+    Ok(token)
+}
 
 /// 注册一个用户；
 /// 入参不合法返 `InvalidParams`(422)，用户名或邮箱已被占用返 `Conflict`(409)
