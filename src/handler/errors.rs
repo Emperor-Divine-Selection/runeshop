@@ -1,5 +1,5 @@
-use axum::{Json, http::StatusCode, response::IntoResponse};
-use serde_json::json;
+use crate::handler::response::ApiResponse;
+use axum::{http::StatusCode, response::IntoResponse};
 
 use crate::service::errors::ServiceError;
 
@@ -29,6 +29,6 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }
         };
-        (status, Json(json!({ "error": message }))).into_response()
+        ApiResponse::err(status.as_u16(), message).into_response()
     }
 }

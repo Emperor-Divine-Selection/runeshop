@@ -1,2 +1,3 @@
 pub mod errors;
-pub mod register;
+pub mod response;
+pub mod user;

@@ -7,7 +7,8 @@ use crate::service::user::register;
 use crate::state::AppState;
 use crate::store::user::NewUser;
 
-use super::errors::ApiError;
+use crate::handler::errors::ApiError;
+use crate::handler::response::ApiResponse;
 
 /// 注册请求体
 #[derive(Deserialize)]
@@ -31,14 +32,14 @@ pub struct UserResponse {
 }
 
 impl From<Model> for UserResponse {
-    fn from(m: Model) -> Self {
+    fn from(value: Model) -> Self {
         Self {
-            id: m.id,
-            username: m.username,
-            email: m.email,
-            avatar: m.avatar,
-            bio: m.bio,
-            create_time: m.create_time,
+            id: value.id,
+            username: value.username,
+            email: value.email,
+            avatar: value.avatar,
+            bio: value.bio,
+            create_time: value.create_time,
         }
     }
 }
@@ -47,7 +48,7 @@ impl From<Model> for UserResponse {
 pub async fn register_handler(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
-) -> Result<(StatusCode, Json<UserResponse>), ApiError> {
+) -> Result<Json<ApiResponse<UserResponse>>, ApiError> {
     let model = register(
         &state.db,
         NewUser {
@@ -59,5 +60,8 @@ pub async fn register_handler(
         },
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(model.into())))
+    Ok(Json(ApiResponse::ok(
+        StatusCode::CREATED.as_u16(),
+        model.into(),
+    )))
 }
