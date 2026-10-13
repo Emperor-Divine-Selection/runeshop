@@ -72,16 +72,25 @@ runeshop/
     │       └── mod.rs      # users 表的方法
     ├── service/            # 业务层：只管「业务规则怎么判」
     │   ├── mod.rs
-    │   ├── errors.rs       # ServiceError（5 变体，业务错误在这里产生）
-    │   └── user.rs         # register：查重 + 编排 store
+    │   ├── errors.rs       # ServiceError（6 变体，业务错误在这里产生）
+    │   └── user/
+    │       └── mod.rs      # register：查重 + 编排 store；login：验密码 + 发 token
     ├── handler/            # HTTP 层：只管「JSON 怎么进出」
     │   ├── mod.rs
     │   ├── errors.rs       # ApiError（把 ServiceError 翻成 HTTP 状态码）
-    │   └── register/
-    │       └── mod.rs      # handler + Request/Response DTO
+    │   ├── response.rs     # ApiResponse<T> 统一响应信封
+    │   └── user/
+    │       ├── register.rs # RegisterRequest / UserResponse + handler
+    │       └── login.rs    # LoginRequest / LoginResponse + handler
     ├── router/             # 路由层：只管「哪个 URL 走哪个 handler」
-    │   └── mod.rs          # app(db) -> Router，组装全部路由 + 中间件
-    └── cache/              # 缓存层：fred 封装（空壳，待建）
+    │   └── mod.rs          # app(state) -> Router，组装全部路由 + 中间件
+    ├── state/              # axum 共享状态
+    │   └── mod.rs          # AppState { db, cache }
+    └── cache/              # 缓存层：fred 封装
+        ├── mod.rs
+        ├── errors.rs       # CacheError（单变体 Technical）
+        ├── kv.rs           # 通用 KV：set_ex / get / del（不认识 token）
+        └── token.rs        # token 业务：generate / save / get / delete
 ```
 
 **依赖方向（单向向下，不可倒置）**：
@@ -106,20 +115,21 @@ model/    entity（sea-orm 自动生成）
 
 | 位置 | 形态 | 例子 |
 |---|---|---|
-| **层的直属文件** | 扁平放，与 `mod.rs` 同级 | `service/errors.rs`、`store/errors.rs` |
-| **按实体/操作分组的子集合** | 建子目录 | `store/user/`、`handler/register/` |
-| **层本身是容器** | 直接建目录 | `router/`、`cache/` |
+| **层的直属文件** | 扁平放，与 `mod.rs` 同级 | `service/errors.rs`、`store/errors.rs`、`handler/response.rs` |
+| **按实体/操作分组的子集合** | 建子目录 | `store/user/`、`handler/user/`、`service/user/` |
+| **层本身是容器** | 直接建目录 | `router/`、`cache/`、`state/` |
 
 - `src/router.rs` 和 `src/router/mod.rs` **对 `mod router;` 完全等价**（见踩坑 9）—— 两种形态随时可互换，调用方零改动
 - 目录名单数：`user/` 不是 `users/`，`register/` 不是 `registers/`
-- **例外登记**：`cache/mod.rs` 是 0 字节空壳（与「用到才建」原则有出入）。已记为待建项 —— 写第一个缓存方法时填内容，或直接删掉目录
+- **按实体分的层**（store / service / handler）用 `user/` 承载一个实体的所有操作；**handler 层**曾经试过按操作分（`handler/register/` + `handler/login.rs`），最后改回按实体分 —— 一个实体的所有接口放一起更好找
+- **⚠️ 别让目录名 stutter**（见踩坑 76）：`service/user_service/` 里 `service` 说两遍，父目录已经说明层次
 
 ### 各层的划分依据
 
 | 层 | 分法 | 理由 |
 |---|---|---|
 | `store/` `service/` | **按实体**（`user/` = users 表相关的所有操作） | 同一实体的存取和业务规则天然在一起 |
-| `handler/` | **按操作**（`register/` = 注册这个接口） | 一个实体会有多个 handler（register / login / update_profile），按操作分更清晰 |
+| `handler/` | **按实体**（`user/` = 一个实体所有接口） | 一个实体的接口放一起更好找；按操作分反而散（试过 `handler/register/` + 散放 `login.rs`，改回了） |
 | `router/` | 暂时只有 `mod.rs`，未来按实体拆 | 路由是「URL → handler」的映射，实体多了再拆（用 `.merge()` 拼） |
 
 ## 架构决策
@@ -225,16 +235,35 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
   - 邮箱正则用 `static RE: LazyLock<Regex>` 包一层，全局只编译一次
   - 实测：422（空用户名/邮箱格式错/`a@b.c`/密码 7 位/4 个汉字）、201（带首尾空格+大小写混写）、409（用户名或邮箱重复）全部通过
   - ⚠️ 归一化只对新写入生效 —— 库里已有 `alice` + `ALICE` 脏数据，见踩坑 61
+- [x] **cache 层**（fred，通用 KV 打底 + 业务封装）
+  - `cache/kv.rs`：`set_ex` / `get` / `del` 三个通用函数，**不认识「token」** —— 收 `client: &Client` 参数（连接由 main 注入，和 store 层方案乙一致）
+  - `cache/token.rs`：`generate()` / `save()` / `get()` / `delete()`，拼 `token:` 前缀 + 默认 24h TTL
+  - `cache/errors.rs`：`CacheError::Technical(fred Error)` —— 单变体（valkey 只可能成功/技术失败，「查不到」走 `Option`）
+  - 实测：save→TTL 86367（默认24h）/ 指定 60s 生效 / get 不存在返 `None` / generate 64 字符
+- [x] **登录接口** `POST /auth/login`
+  - `store::verify_password(hash, plain)`：argon2 **反向验证**，不是重新哈希再比对（盐随机，字符串永不相等）
+  - 参数顺序 `(明文, 哈希)` —— 明文在前，容易记反
+  - `service::login`：归一化 → 查用户 → 验密码 → `generate()` → `save()` → 返 token
+  - ⚠️ **用户不存在和密码错返同一句话**「用户名或密码错误」，防用户名枚举（见踩坑 51）
+  - `service::login` 只返 `String`（token）—— 用户名让前端自己查，登录不是查用户
+  - `LoginResponse` 只含 `token`，不从 `Model` 搬字段
+- [x] **统一响应信封** `ApiResponse<T>`
+  - 三种场景（成功/登录/失败）统一 `{code, msg, data}`，前端一套解析逻辑
+  - `ok(code, data)` / `err(code, msg)` —— `ApiResponse<()>` 单独 impl `err`，失败侧不需要泛型
+  - `IntoResponse` 里 `StatusCode::from_u16(code)` 反推 HTTP 状态码 —— **body 的 code 和 HTTP 头保持一致**
+  - ⚠️ 不能因为包了信封就把 HTTP 状态码一律返 200 —— 监控/网关/重试只看 HTTP 头
+- [x] **`AppState` 诞生**（踩坑 43 说的「第二个字段」触发时刻）
+  - 放在 `src/state/mod.rs` 而非 `main.rs` —— 否则 handler 要 `use crate::AppState` 反向依赖 main（见踩坑 44）
+- [x] **handler 按实体重组**：`handler/register/` + 散放的 `login.rs` → `handler/user/{register,login}.rs`
+  - 一个实体的所有接口放一起；`login` 的 URL 是 `/auth/login`（动作）但代码归 user
 
 ### 🚧 进行中 / 下一步（线性竖切：一次一条链路）
 
 - [ ] **`GET /users/{id}`** —— 用上零使用的 `NotFound` 变体，走通「`Option` → 404」路径，顺便验证 axum 路径参数（`Path<i32>`）
-- [ ] **登录接口**：`verify_password`（与 `hash_password` 反向）+ 发 token（JWT 或 session + fred）
-  - ⚠️ 登录的错误消息**必须模糊**（「用户名或密码错误」），防用户名枚举（见踩坑 51）
-  - ⚠️ 登录查重必须做和注册一样的 `trim()` + `to_lowercase()`（见踩坑 62）
-  - `Business` 变体至今零使用 —— 登录的「用户名或密码错误」正是它的用武之地
-- [ ] cache 层（fred，cache-aside：读→miss→查库→回填；写→写库→失效缓存）
+- [ ] **登录态校验**：写一个 `AuthUser` 提取器（读 `Authorization` 头 → 查 token → 拿 user_id），把「必须登录才能访问」的接口保护起来
+  - `POST /register` 和 `POST /auth/login` 保持公开
 - [ ] `GET /users` 列表（会碰到分页这个大话题）
+- [ ] `GET /health` 接口（调接口时先确认服务活着）
 - [ ] `GET /health` 接口（调接口时先确认服务活着）
 
 ## 踩坑记录（重要教训）
@@ -349,6 +378,23 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 66. **⚠️ 用户输入绝不能当正则**：`Regex::new(用户输入)` 会因非法语法 panic，那是 DoS 攻击面。`.unwrap()` 只在「模式是手写常量」时安全
 67. **Rust 的 `regex` 不支持反向引用和环视**（`\1`、`(?=...)`）：这是**有意的取舍** —— 该库用有限自动机保证线性时间，不可能出现「灾难性回溯」，而 JS/Java 的正则能写出 `(a+)+$` 这种指数级 DoS。代价是某些模式要换个思路写
 68. **邮箱正则只能验格式，验不了存在性**：`notreal@gmail.com` 格式合法但邮箱不存在。正则挡住的只是 `abc`、`a@b`、`@x.com` 这类明显笔误。**要真验证必须发验证码 + 加 `email_verified` 字段**（现在项目里没做，是有意为之）
+
+### 缓存 / fred 实战
+
+69. **⚠️ fred 的 `connect()` 绝对不能 `await`**：`connect()` 返回 `ConnectHandle = JoinHandle<Result<(), Error>>`，fred 源码注释明说它「resolve 于连接**关闭**时」—— await 它会永久挂起。症状是**程序静默卡死**：没有 panic、没有日志、退出码 124，极易误诊。正确用法是**两步**：
+    ```rust
+    client.connect();                     // 启动后台连接任务（同步调用）
+    client.wait_for_connect().await?;      // 这个才是「等连上」
+    ```
+    初次尝试过 `connect().await.expect()` 和链式写法，全部踩坑。**看到 `JoinHandle` 就要警觉**：它包的是「任务的结果」，不是「任务做完了」。
+70. **`ClientLike` trait 必须导入**：`connect()` / `wait_for_connect()` 是 trait 方法，不是 `Client` 的 inherent 方法。`use fred::interfaces::ClientLike;` —— 而且**每个用到命令的模块都要自己导一次**（trait 作用域不跨模块）。
+71. **`get` 必须显式标注目标类型**：`let v: Option<i32> = client.get(key).await?;` —— fred 靠 `R: FromValue` 决定怎么把字节解析成你的类型，标注了才推得出来。少了标注报 `type annotations needed`。
+72. **不需要的返回值用 `let _: () = ...` 消掉**：`set` / `del` 的返回类型 `R` 只出现在返回值里，不标注编译器推不出来。标 `()` 表示「我不关心回了什么，只关心有没有报错」。
+73. **`format!` 里写错括号会静默出错**：`format!("[KEY_PREFIX] {token}")` —— 方括号是**字面量**，不会插值！结果是 `"[KEY_PREFIX] abc123"`，而常量 `KEY_PREFIX` 变成未使用（编译器会警告 `constant is never used`，这是发现它的信号）。**哨兵**：写完 `format!` 后，凡是不该出现在输出里的常量名都要检查。
+74. **⚠️ 日志分类（Display 前缀）和变体名是两件事**：`ServiceError` 的 `Database` / `Cache` 两个变体在 `Display` 里**都打 `[Technical]` 前缀** —— 因为「这是技术故障」才是日志要回答的问题，来源靠**模式匹配**判断，不靠**字符串**。想统一日志，就统一 Display 前缀；**别为了统一字符串去搞 `Box<dyn Error>`**（那是过度设计，曾在这个问题上绕了弯路）。
+75. **响应信封里 HTTP 状态码和 body 的 `code` 必须一致**：包了 `ApiResponse` 也**不能一律返 200**。HTTP 状态码给机器看（nginx / 监控 / HTTP 库的重试逻辑），body 的 code 给前端逻辑看。实现方式：`IntoResponse` 里 `StatusCode::from_u16(self.code)` 反推，**同一个字段驱动两处**，不可能不一致。
+76. **目录名别 stutter（service/user_service 实录）**：`src/service/user_service/{user,login}.rs` 里 `service` 说了两遍。父目录 `service/` 已经说明层次，子级只该说「哪个实体」。改名为 `service/user/mod.rs` 后调用路径从 `crate::service::user_store::` 变成 `crate::service::user::`，**少一层纯为命名的目录**。
+77. **URL 不认识你的代码结构**：`.route("handler/register", ...)` 把目录名写进了 URL。URL 是 API 契约，文件放哪不该影响它 —— 函数在 `handler/user/register.rs`，URL 叫 `/register` 完全没问题。另外**路由必须以 `/` 开头**，少了就是静默 404。
 
 ## 约定
 
