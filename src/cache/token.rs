@@ -1,4 +1,5 @@
 use fred::prelude::*;
+use sea_orm::prelude::Uuid;
 use std::time::Duration;
 
 use crate::cache::errors::CacheError;
@@ -26,21 +27,26 @@ pub fn generate() -> String {
 pub async fn save(
     client: &Client,
     token: &str,
-    user_id: i32,
+    user_id: Uuid,
     ttl: Option<Duration>,
 ) -> Result<(), CacheError> {
+    // fred 不支持 Uuid —— 转字符串存
     kv::set_ex(
         client,
         &key(token),
-        user_id,
+        user_id.to_string(),
         Some(ttl.unwrap_or(DEFAULT_TTL)),
     )
     .await
 }
 
-/// 取 token 对应的 user_id；不存在或已过期都返 `Ok(None)`
-pub async fn get(client: &Client, token: &str) -> Result<Option<i32>, CacheError> {
-    kv::get(client, &key(token)).await
+/// 取 token 对应的 user_id；不存在、已过期、或格式无效都返 `Ok(None)`
+pub async fn get(client: &Client, token: &str) -> Result<Option<Uuid>, CacheError> {
+    let Some(raw) = kv::get::<String>(client, &key(token)).await? else {
+        return Ok(None);
+    };
+    // parse 失败（例如旧数据存的是整数）= 当作无效 token
+    Ok(raw.parse().ok())
 }
 
 /// 注销：删掉 token

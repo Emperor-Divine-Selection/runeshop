@@ -23,7 +23,7 @@ pub struct RegisterRequest {
 /// 注册响应体（脱敏：绝不含 password_hash）
 #[derive(Serialize)]
 pub struct UserResponse {
-    pub id: i32,
+    pub id: Uuid,
     pub username: String,
     pub email: String,
     pub avatar: Option<String>,

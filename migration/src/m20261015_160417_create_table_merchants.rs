@@ -26,8 +26,8 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table("merchants")
                     .if_not_exists()
-                    .col(pk_auto("id"))
-                    .col(integer("user_id").not_null().unique_key())
+                    .col(pk_uuid("id").default(Expr::cust("gen_random_uuid()")))
+                    .col(uuid("user_id").not_null().unique_key())
                     .col(
                         timestamp_with_time_zone("create_time")
                             .default(Expr::current_timestamp())
