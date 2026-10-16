@@ -2,7 +2,7 @@ use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
 use crate::handler::response::ApiResponse;
-use crate::service::user::login;
+use crate::service::customer::user::login;
 use crate::state::AppState;
 
 use crate::handler::errors::ApiError;

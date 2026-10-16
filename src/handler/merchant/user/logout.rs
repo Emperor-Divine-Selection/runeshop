@@ -2,7 +2,7 @@ use axum::{Json, extract::State, http::HeaderMap, http::StatusCode};
 
 use crate::handler::response::ApiResponse;
 use crate::service::errors::ServiceError;
-use crate::service::user::logout;
+use crate::service::merchant::user::logout;
 use crate::state::AppState;
 
 use crate::handler::errors::ApiError;

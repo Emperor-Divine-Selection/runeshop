@@ -3,7 +3,7 @@ use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::model::users::Model;
-use crate::service::user::register;
+use crate::service::customer::user::register;
 use crate::state::AppState;
 use crate::store::user::NewUser;
 

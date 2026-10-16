@@ -1,3 +1,4 @@
+use crate::model::sea_orm_active_enums::MerchantStatus;
 use regex::Regex;
 use sea_orm::ConnectionTrait;
 use std::sync::LazyLock;
@@ -5,13 +6,14 @@ use std::sync::LazyLock;
 use crate::{
     cache::token::{delete, generate, save},
     model::users::Model,
+    store::merchant::{ceate_merchant, find_merchant_by_user_id},
     store::user::{NewUser, create_user, find_by_email, find_by_username, verify_password},
 };
 
 use crate::service::errors::ServiceError;
 
 /// 用户登陆
-pub async fn login<C: ConnectionTrait>(
+pub async fn merchant_login<C: ConnectionTrait>(
     db: &C,
     cache: &fred::clients::Client,
     username: &str,
@@ -26,9 +28,19 @@ pub async fn login<C: ConnectionTrait>(
         return Err(ServiceError::Business("用户名或密码错误".into()));
     };
 
+    let Some(merchant) = find_merchant_by_user_id(db, user.id).await? else {
+        return Err(ServiceError::NotFound("你不是商户".into()));
+    };
+
     let token = generate();
     save(cache, &token, user.id, None).await?;
-    Ok(token)
+
+    match merchant.status {
+        MerchantStatus::Active => Ok(token),
+        MerchantStatus::Pending => Err(ServiceError::Business("商户申请审核中".into())),
+        MerchantStatus::Frozen => Err(ServiceError::Business("商户已被冻结".into())),
+        MerchantStatus::Rejected => Err(ServiceError::Business("商户申请已被拒绝".into())),
+    }
 }
 
 /// 用户登出

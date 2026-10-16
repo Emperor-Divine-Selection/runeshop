@@ -3,9 +3,9 @@ use axum::Router;
 use axum::routing::post;
 use tower_http::trace::TraceLayer;
 
-use crate::handler::user::login::login_handler;
-use crate::handler::user::logout::logout_handler;
-use crate::handler::user::register::register_handler;
+use crate::handler::customer::user::login::login_handler;
+use crate::handler::customer::user::logout::logout_handler;
+use crate::handler::customer::user::register::register_handler;
 
 /// 组装 HTTP 路由；返回已套好中间件的 Router
 pub fn app(state: AppState) -> Router {
