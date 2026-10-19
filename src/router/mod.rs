@@ -1,18 +1,16 @@
+mod backoffice;
+mod common;
+mod customer;
+mod merchant;
+
 use crate::state::AppState;
 use axum::Router;
-use axum::routing::post;
 use tower_http::trace::TraceLayer;
 
-use crate::handler::customer::user::login::login_handler;
-use crate::handler::customer::user::logout::logout_handler;
-use crate::handler::customer::user::register::register_handler;
-
-/// 组装 HTTP 路由；返回已套好中间件的 Router
 pub fn app(state: AppState) -> Router {
-    Router::new()
-        .route("/register", post(register_handler))
-        .route("/auth/login", post(login_handler))
-        .route("/auth/logout", post(logout_handler))
+    common::routes()
+        .merge(customer::routes())
+        .merge(merchant::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

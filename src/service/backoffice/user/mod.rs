@@ -8,7 +8,7 @@ use crate::{
     store::user::{NewUser, create_user, find_by_email, find_by_username, verify_password},
 };
 
-use crate::service::errors::ServiceError;
+use crate::service::error::ServiceError;
 
 /// 用户登陆
 pub async fn login<C: ConnectionTrait>(

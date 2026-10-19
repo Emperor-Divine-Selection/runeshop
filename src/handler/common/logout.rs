@@ -1,11 +1,11 @@
 use axum::{Json, extract::State, http::HeaderMap, http::StatusCode};
 
 use crate::handler::response::ApiResponse;
-use crate::service::errors::ServiceError;
-use crate::service::merchant::user::logout;
+use crate::service::common::logout;
+use crate::service::error::ServiceError;
 use crate::state::AppState;
 
-use crate::handler::errors::ApiError;
+use crate::handler::error::ApiError;
 
 pub async fn logout_handler(
     State(state): State<AppState>,
@@ -24,6 +24,6 @@ pub async fn logout_handler(
         )));
     };
 
-    logout(&state.cache, &token).await?;
+    logout(&state.cache, token).await?;
     Ok(Json(ApiResponse::ok(StatusCode::OK.as_u16(), ())))
 }

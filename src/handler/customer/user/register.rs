@@ -7,7 +7,7 @@ use crate::service::customer::user::register;
 use crate::state::AppState;
 use crate::store::user::NewUser;
 
-use crate::handler::errors::ApiError;
+use crate::handler::error::ApiError;
 use crate::handler::response::ApiResponse;
 
 /// 注册请求体

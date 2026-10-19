@@ -51,44 +51,63 @@ runeshop/
 ├── .env                    # 本地配置（不入 git）
 ├── AGENTS.md
 ├── Cargo.toml              # workspace：[workspace] members = ["migration"]
-├── migration/              # 独立 crate：数据库迁移
+├── migration/              # 独立 crate：数据库迁移（sea-orm 2.0.0，与根 2.0.3 有版本差）
 │   └── src/
 │       ├── lib.rs          # Migrator + migrations() 列表（每个新迁移都要手动注册！）
 │       ├── main.rs         # CLI 入口（migrate up/down 的执行体）
-│       ├── m20220101_000001_create_table_users.rs
-│       └── m20260926_055846_alter_users_avatar_bio_nullable.rs
+│       ├── m20220101_000001_create_table_users.rs            # 建 users（id 是 pk_auto integer）
+│       ├── m20260926_055846_alter_users_avatar_bio_nullable.rs  # avatar/bio 改可空
+│       ├── m20261015_120000_alter_users_id_to_uuid.rs        # users.id integer → uuid
+│       └── m20261015_160417_create_table_merchants.rs       # 建 merchants + merchant_status 枚举
 └── src/
-    ├── main.rs             # 入口：读 Config → 连库 → 起 Axum
+    ├── main.rs             # 入口：读 Config → 连库 → 连 Valkey → 起 Axum
     ├── config/
     │   └── mod.rs          # Config 结构体 + new()（内部调 dotenvy::dotenv()）
     ├── model/              # entity 层（sea-orm-cli 自动生成，不要手改）
-    │   ├── mod.rs
-    │   ├── prelude.rs      # 别名（Entity as Users 等）
-    │   └── users.rs        # users 实体
-    ├── store/              # 存库层：只管「数据怎么存」
-    │   ├── mod.rs          # 只放 pub mod 声明，一行一个，不写逻辑
-    │   ├── errors.rs       # StoreError（2 变体：NotFound / Technical）
-    │   └── user/
-    │       └── mod.rs      # users 表的方法
-    ├── service/            # 业务层：只管「业务规则怎么判」
-    │   ├── mod.rs
-    │   ├── errors.rs       # ServiceError（6 变体，业务错误在这里产生）
-    │   └── user/
-    │       └── mod.rs      # register：查重 + 编排 store；login：验密码 + 发 token
-    ├── handler/            # HTTP 层：只管「JSON 怎么进出」
-    │   ├── mod.rs
-    │   ├── errors.rs       # ApiError（把 ServiceError 翻成 HTTP 状态码）
+    │   ├── mod.rs          # ⚠️ 手写模块里唯一用 mod.rs 的例外见命名章节
+    │   ├── prelude.rs      # 别名（Entity as Users / Merchants）
+    │   ├── sea_orm_active_enums.rs  # MerchantStatus（PG enum，自动生成）
+    │   ├── users.rs        # users 实体（id: Uuid）
+    │   └── merchants.rs    # merchants 实体（user_id 唯一 + FK cascade）
+    ├── store/              # 存库层：只管「数据怎么存」——按表平铺，一个表一个文件
+    │   ├── mod.rs          # 只放 pub mod 声明
+    │   ├── error.rs        # StoreError（2 变体：NotFound / Technical）
+    │   ├── user.rs         # users 表的方法（create_user / find_by_* / verify_password）
+    │   └── merchant.rs     # merchants 表的方法（create_merchant / find_merchant_by_user_id）
+    ├── service/            # 业务层：按「端」分组，common/ 放三端共用
+    │   ├── mod.rs          # 只放 pub mod 声明
+    │   ├── error.rs        # ServiceError（6 变体，业务错误在这里产生）
+    │   ├── common/mod.rs   # logout（删 token，三端共用）
+    │   ├── customer/mod.rs # pub mod user
+    │   ├── customer/user/mod.rs   # register + login + validate + is_valid_email
+    │   ├── merchant/mod.rs # pub mod user
+    │   ├── merchant/user/mod.rs   # merchant_login（查 merchants 判状态）
+    │   ├── backoffice/mod.rs      # ⚠️ 空文件
+    │   └── backoffice/user/mod.rs # ⚠️ WIP：没被 pub 声明 → 不参与编译（97 行拷贝）
+    ├── handler/            # HTTP 层：与 service/ 同构，按「端」分组
+    │   ├── mod.rs          # 只放 pub mod 声明
+    │   ├── error.rs        # ApiError（把 ServiceError 翻成 HTTP 状态码）
     │   ├── response.rs     # ApiResponse<T> 统一响应信封
-    │   └── user/
-    │       ├── register.rs # RegisterRequest / UserResponse + handler
-    │       └── login.rs    # LoginRequest / LoginResponse + handler
-    ├── router/             # 路由层：只管「哪个 URL 走哪个 handler」
-    │   └── mod.rs          # app(state) -> Router，组装全部路由 + 中间件
-    ├── state/              # axum 共享状态
+    │   ├── common/mod.rs   # pub mod logout
+    │   ├── common/logout.rs       # 三端共用登出
+    │   ├── customer/mod.rs # pub mod user
+    │   ├── customer/user/mod.rs   # pub mod login / register
+    │   ├── customer/user/{login,register}.rs
+    │   ├── merchant/mod.rs # pub mod user
+    │   ├── merchant/user/mod.rs   # pub mod login
+    │   ├── merchant/user/login.rs # 商户登录（已挂 /merchant/auth/login）
+    │   └── backoffice/mod.rs      # ⚠️ 空文件
+    ├── router/             # 路由层：只管「URL → handler」
+    │   ├── mod.rs          # app(state)：merge 各端 + layer + with_state
+    │   ├── common.rs       # /auth/logout
+    │   ├── customer.rs     # /customer/register、/customer/auth/login
+    │   ├── merchant.rs     # /merchant/auth/login
+    │   └── backoffice.rs   # ⚠️ 空文件（尚未接入）
+    ├── state/
     │   └── mod.rs          # AppState { db, cache }
     └── cache/              # 缓存层：fred 封装
-        ├── mod.rs
-        ├── errors.rs       # CacheError（单变体 Technical）
+        ├── mod.rs          # 只放 pub mod 声明
+        ├── error.rs        # CacheError（单变体 Technical）
         ├── kv.rs           # 通用 KV：set_ex / get / del（不认识 token）
         └── token.rs        # token 业务：generate / save / get / delete
 ```
@@ -115,22 +134,63 @@ model/    entity（sea-orm 自动生成）
 
 | 位置 | 形态 | 例子 |
 |---|---|---|
-| **层的直属文件** | 扁平放，与 `mod.rs` 同级 | `service/errors.rs`、`store/errors.rs`、`handler/response.rs` |
+| **层的直属文件** | 扁平放，与 `mod.rs` 同级 | `service/error.rs`、`store/error.rs`、`handler/response.rs` |
 | **按实体/操作分组的子集合** | 建子目录 | `store/user/`、`handler/user/`、`service/user/` |
 | **层本身是容器** | 直接建目录 | `router/`、`cache/`、`state/` |
 
-- `src/router.rs` 和 `src/router/mod.rs` **对 `mod router;` 完全等价**（见踩坑 9）—— 两种形态随时可互换，调用方零改动
+- **模块布局用 `foo/mod.rs`（2026-10-19 试过全换 `foo.rs` + `foo/`，已回退）**
+  - `src/router.rs` 与 `src/router/mod.rs` 对 `mod router;` 完全等价（踩坑 9）—— 两种形态随时可互换，调用方零改动
+  - 2018 风格（`foo.rs` + `foo/`）确实是官方推荐，也能消灭编辑器里一排同名 `mod.rs` 标签；但代价是目录树里 `handler.rs` 和 `handler/`、`user.rs` 和 `user/` **同名成对**，肉眼看起来更乱。本项目选择留在 `mod.rs` 风格
+  - **唯一保留 `src/model/mod.rs` 的理由不同**：它是 sea-orm-codegen 生成的，重新跑 `sea-orm-cli generate entity` 会写回 `mod.rs`，手改会被覆盖
+  - **单文件模块也可以用 `foo.rs`**（与 `foo/mod.rs` 等价，见踩坑 9），但本项目为统一保留 `foo/mod.rs`
+- **错误文件名单数**：`error.rs` 不是 `errors.rs`（对照 hyper / reqwest / axum-core 的惯例）；模块里放的是「这一层的错误类型」，概念是单数
 - 目录名单数：`user/` 不是 `users/`，`register/` 不是 `registers/`
-- **按实体分的层**（store / service / handler）用 `user/` 承载一个实体的所有操作；**handler 层**曾经试过按操作分（`handler/register/` + `handler/login.rs`），最后改回按实体分 —— 一个实体的所有接口放一起更好找
+- **按实体分的层**（store / service / handler）用 `user/` 承载一个实体的所有操作；**handler 层**曾经试过按操作分（`handler/register/` + 散放 `login.rs`），最后改回按实体分 —— 一个实体的所有接口放一起更好找
 - **⚠️ 别让目录名 stutter**（见踩坑 76）：`service/user_service/` 里 `service` 说两遍，父目录已经说明层次
+- **单复数不一致是「生成物 vs 手写」的边界**：`model/users.rs` / `model/merchants.rs` 是 sea-orm 按表名生成的**复数**；`store/user.rs` / `service/.../user/` 是手写模块，用**单数**。这不是漂移，是生成工具的约束 —— 别为了「统一」去改 `model/` 的文件名
+
+### ⚠️ `store/` 是唯一的例外：按表平铺，不建子目录
+
+store 层目前是 `store/user.rs` + `store/merchant.rs` 平铺，**不是** `store/user/mod.rs`。
+
+**为什么和上面「按实体建子目录」不一致**（这是有意的例外，不是漂移）：
+
+- store 层的单位是**表**，不是「实体」——`users` 和 `merchants` 就是两张表，将来 `products` / `orders` 是更多平铺文件
+- 一个 `user/` 目录里塞 `create_user` / `find_by_username` / `verify_password`，`verify_password` 严格说**不属于 users 表**（它是纯 argon2 计算，不碰 DB），放进去反而别扭
+- ⚠️ **但这带来一个真实的痛点**：`verify_password` 这个三端共用的逻辑现在藏在 `store/user.rs` 里，而它既是 store 层的、又和 store 的语义（只管数据怎么存）不搭。**将来大概率要上提到 `service/common/`**（见踩坑 78）
+
+### ★ service/ 与 handler/ 现在有两个分组维度：端 + 实体
+
+```
+service/customer/user/mod.rs     ← 端（customer/merchant/backoffice）+ 实体（user）
+```
+
+- **端这一维**：三端（顾客 / 商户 / 后台）业务规则不同，同一个操作要做三份
+- **实体这一维**：端内还有多个实体，将来会有 `service/customer/order/mod.rs`、`service/merchant/product/mod.rs`
+- `common/` 是不属于任何一端的共用逻辑（当前只有 `logout`）
+
+**⚠️ 这里有个尚未想清楚的问题**（**待决**，别急着照着写）：
+
+`service/backoffice/user/mod.rs` 目前是 `service/customer/user/mod.rs` 的**逐字节拷贝**（97 行，`register` + `login` + `logout` + `validate` + `is_valid_email` 全部重复），而且**没被 `service/backoffice/mod.rs` 声明，根本不参与编译**。
+
+问题是：**三端登录真的需要三份代码吗？** 三个选项，都还没定：
+
+| 方案 | 说明 | 代价 |
+|---|---|---|
+| A. 每端一份 | 现状（拷贝三遍） | 改密码规则要改三处，忘一处就是 bug（踩坑 33 的跨端版本） |
+| B. 端只做命名空间，逻辑下沉 common | `common/user/` 放归一化+validate+验密码，各端只留自己特有的（如商户多判 `merchants.status`） | 端变得很薄，「一眼看完这个端干什么」要跨文件跳 |
+| C. 登录统一成一个入口 | `/auth/login` 内部按账户类型分派 | URL 语义变复杂；且后台账号是否和顾客共用 `users` 表还没定 |
+
+**在这个问题定下来之前，`backoffice/` 那份拷贝是「脚手架」还是「要删的债」，不要默认任何一个。**
 
 ### 各层的划分依据
 
 | 层 | 分法 | 理由 |
 |---|---|---|
-| `store/` `service/` | **按实体**（`user/` = users 表相关的所有操作） | 同一实体的存取和业务规则天然在一起 |
-| `handler/` | **按实体**（`user/` = 一个实体所有接口） | 一个实体的接口放一起更好找；按操作分反而散（试过 `handler/register/` + 散放 `login.rs`，改回了） |
-| `router/` | 暂时只有 `mod.rs`，未来按实体拆 | 路由是「URL → handler」的映射，实体多了再拆（用 `.merge()` 拼） |
+| `store/` | **按表平铺**（`user.rs` = users 表所有操作） | 唯一按表分的层，见上面「例外」说明 |
+| `service/` `handler/` | **按端 → 按实体**（`customer/user/` = 顾客端的 user 业务） | 端隔离 + 端内实体隔离；待决问题见上 |
+| `handler/` | 同上，按端分组 | 一个端的所有接口放一起更好找；按操作分反而散（试过 `handler/register/` + 散放 `login.rs`，改回了） |
+| `router/` | **按端拆**（`mod.rs` 只做 merge + layer + with_state） | 路由是「URL → handler」的映射，三端已经够拆了（`.merge()` 拼） |
 
 ## 架构决策
 
@@ -148,9 +208,11 @@ pub async fn find_by_username<C: ConnectionTrait>(
 **为什么**：sea-orm 的 `DatabaseConnection`（池）和 `DatabaseTransaction`（事务）是两个**完全不同的类型，彼此不能转换**。如果 store 方法签名写死 `&DatabaseConnection`，事务里就调不了它 —— 只能把查询代码重抄一遍（旧项目踩坑 28 的原罪）。用泛型后同一份代码两边都能跑：
 
 ```rust
-UserStore::find_by_username(&state.db, "x").await   // 走池
-UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代码
+find_by_username(&state.db, "x").await   // 走池
+find_by_username(&txn, "x").await        // 走事务，同一份代码
 ```
+
+**当前形态是自由函数（`store::user::find_by_username`），不是 `UserStore` 关联类型** —— 因为 store 不持有任何状态（没有 `&self`），套一层 struct 只是多打几个字。文件路径本身承担了「命名空间」的作用。
 
 **代价**（都已接受）：
 - 编译期单态化，每种类型生成一份机器码 → 产物体积涨、编译变慢（sea-orm 自己就这么干）
@@ -169,7 +231,7 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 
 | 东西 | 规范 | 正例 | 反例 |
 |---|---|---|---|
-| 目录、模块、文件 | `snake_case` | `store/user/mod.rs` | ~~`store/UserStore/`~~ |
+| 目录、模块、文件 | `snake_case` | `store/user.rs` | ~~`store/UserStore/`~~ |
 | 类型（struct/enum/trait） | `UpperCamelCase` | `struct UserStore` | ~~目录也叫 UserStore~~ |
 | 函数、方法、变量 | `snake_case` | `find_by_username` | |
 
@@ -205,20 +267,20 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
   - `..Default::default()` 让 `id` / `create_time` / `update_time` 走数据库默认值
   - 文档注释写明「不查重（查重是 service 层的业务规则）」
 - [x] **错误三层架构**（每层只管自己的语言，**展平转换不嵌套**）
-  - `StoreError`（`src/store/errors.rs`）2 变体：`NotFound` / `Technical` —— 只管存储
-  - `ServiceError`（`src/service/errors.rs`）5 变体 —— 业务错误在这里产生
-  - `ApiError`（`src/handler/errors.rs`）`Service(ServiceError)` + `IntoResponse` —— 翻成 HTTP
+  - `StoreError`（`src/store/error.rs`）2 变体：`NotFound` / `Technical` —— 只管存储
+  - `ServiceError`（`src/service/error.rs`）6 变体 —— 业务错误在这里产生
+  - `ApiError`（`src/handler/error.rs`）`Service(ServiceError)` + `IntoResponse` —— 翻成 HTTP
   - 转换链：`DbErr → StoreError → ServiceError → ApiError → HTTP`，每层一个 `From` impl
   - **为什么不嵌套**（`ServiceError::Store(StoreError)`）：嵌套会让 handler 的 match 变成三层 `ApiError::Service(ServiceError::Store(StoreError::Technical(e)))`，展平后只有两层
 - [x] **service 层**：`register`（username/email 查重 → 409；再编排 store 插库）
-- [x] **handler 层**：`src/handler/register/mod.rs`（`RegisterRequest` / `UserResponse` + handler）
+- [x] **handler 层**：注册接口的 DTO + handler（初版在 `src/handler/register/mod.rs`，三端重组后迁到 `src/handler/customer/user/register.rs`）
   - **脱敏**：`impl From<Model> for UserResponse` 里**故意不搬 `password_hash`**
   - DTO 与 entity 分离：字段一改不会破 API 契约
 - [x] **`main.rs` 完整化**：`Router` + `TraceLayer` + `.with_state(db)` + `axum::serve`
   - 顺序不能错：`route` → `layer` → `with_state`
   - `DatabaseConnection` 本身已 `Clone`，**不需要 `AppState` 结构体**（见踩坑 43）
   - `tracing_subscriber::fmt::init()` 必须在挂 `TraceLayer` 之前，否则 TraceLayer 是哑巴
-- [x] **端到端实测通过**：`POST /users` → 201 Created
+- [x] **端到端实测通过**：`POST /register` → 201 Created
   - `password_hash = $argon2id$v=19$m=19456,...`（argon2id，非明文）
   - `avatar` / `bio` 返回 `null`（`Set(None)` → NULL 生效）
   - `create_time` 由数据库默认值填充（`..Default::default()` 生效）
@@ -227,7 +289,7 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
   - `TraceLayer` 放在 `app()` 里 → 返回的是**套好中间件的完整 Router**，`main.rs` 零 HTTP 知识
   - `main.rs` 从 37 行降到 29 行，净减 4 行 import（`axum::Router` / `routing::post` / `TraceLayer` / `register_handler` 全部搬走）
   - 剩下的全是进程生命周期：init 日志 → 读 Config → 连库 → 装配 → 绑端口 → serve
-  - 生长路径：路由超 3 组实体时 `router/` 下按实体拆 `user.rs` / `auth.rs`，用 `.merge()` 拼，`main.rs` 零改动
+  - 生长路径：三端出现后 `router/` 按端拆（`customer.rs` / `merchant.rs` / `common.rs`），用 `.merge()` 拼，`main.rs` 零改动
 - [x] **补全注册规则**（`InvalidParams` 终于用上了）
   - 抽出 `validate()` + `MIN_PASSWORD_LEN` 常量；顺序：**归一化 → 校验（不碰 DB）→ 查重（查两次库）→ 入库**
   - 规则：用户名非空 / 邮箱正则（顶级域名 ≥2 字母）/ 密码 `chars().count() >= 8`
@@ -238,11 +300,11 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 - [x] **cache 层**（fred，通用 KV 打底 + 业务封装）
   - `cache/kv.rs`：`set_ex` / `get` / `del` 三个通用函数，**不认识「token」** —— 收 `client: &Client` 参数（连接由 main 注入，和 store 层方案乙一致）
   - `cache/token.rs`：`generate()` / `save()` / `get()` / `delete()`，拼 `token:` 前缀 + 默认 24h TTL
-  - `cache/errors.rs`：`CacheError::Technical(fred Error)` —— 单变体（valkey 只可能成功/技术失败，「查不到」走 `Option`）
+  - `cache/error.rs`：`CacheError::Technical(fred Error)` —— 单变体（valkey 只可能成功/技术失败，「查不到」走 `Option`）
   - 实测：save→TTL 86367（默认24h）/ 指定 60s 生效 / get 不存在返 `None` / generate 64 字符
-- [x] **登录接口** `POST /auth/login`
-  - `store::verify_password(hash, plain)`：argon2 **反向验证**，不是重新哈希再比对（盐随机，字符串永不相等）
-  - 参数顺序 `(明文, 哈希)` —— 明文在前，容易记反
+- [x] **登录接口** `POST /customer/auth/login`
+  - `store::verify_password(stored_hash, plain)`：argon2 **反向验证**，不是重新哈希再比对（盐随机，字符串永不相等）
+  - ⚠️ 参数顺序是 **`(哈希, 明文)`** —— 和 `create_user` 的 `NewUser.password`（明文）正好相反，记混了编译能过、运行必错（见踩坑 83）
   - `service::login`：归一化 → 查用户 → 验密码 → `generate()` → `save()` → 返 token
   - ⚠️ **用户不存在和密码错返同一句话**「用户名或密码错误」，防用户名枚举（见踩坑 51）
   - `service::login` 只返 `String`（token）—— 用户名让前端自己查，登录不是查用户
@@ -256,14 +318,61 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
   - 放在 `src/state/mod.rs` 而非 `main.rs` —— 否则 handler 要 `use crate::AppState` 反向依赖 main（见踩坑 44）
 - [x] **handler 按实体重组**：`handler/register/` + 散放的 `login.rs` → `handler/user/{register,login}.rs`
   - 一个实体的所有接口放一起；`login` 的 URL 是 `/auth/login`（动作）但代码归 user
+- [x] **登出接口** `POST /auth/logout`：读 `token` 请求头 → `cache::token::delete`
+- [x] **主键 integer → uuid**（`m20261015_120000_alter_users_id_to_uuid`）
+  - sea-query 没有「改列类型」的 DSL，只能**四步绕**：加新列（`uuid().default("gen_random_uuid()")`）→ drop 旧列 → rename → `modify_column().primary_key()`
+  - `users.id` 和 `merchants.id` / `merchants.user_id` 全部 uuid
+  - ⚠️ `down()` 是**破坏性**的（回滚会丢新生成的 uuid），和「有数据时回滚失败」（踩坑 40）是两类问题
+  - **entity 要重新生成**：`#[sea_orm(primary_key, auto_increment = false)]` + 字段类型 `Uuid`
+- [x] **`merchants` 表**（`m20261015_160417_create_table_merchants`）+ `merchant_status` PG 枚举
+  - 枚举用 `create_type(...)` 建 PG 原生 enum，列用 `.enumeration("status", "merchant_status", [...]).default("pending")`
+  - `user_id` 加 unique（一人一商户）+ FK 指向 `users(id)`，`on_delete/on_update = Cascade`
+  - entity 自动生成 `sea_orm_active_enums.rs` → `MerchantStatus`（四个态：Pending/Active/Frozen/Rejected）
+  - ⚠️ `down()` 顺序有讲究：**先 drop table 再 drop enum type**，反了会因依赖关系失败
+- [x] **`merchant_login`（商户登录骨架）**：查 users → 验密码 → 查 merchants → 判 `status`
+  - 状态判定用 `match merchant.status` 穷举四个变体，`Active` 才发 token
+  - ✅ 已修：`generate()` + `save()` 原来写在 `match status` **之前**（非 Active 商户会留下孤儿 token），现在只在 `Active` 分支里发 token（见踩坑 78）
+  - ✅ 已挂路由：`POST /merchant/auth/login`
+- [x] **router 按端拆分（2026-10-20）**
+  - `router/mod.rs` 只做 `merge` + `layer` + `with_state`；各端 `routes() -> Router<AppState>`
+  - **URL 约定**：端特有接口带端前缀（`/customer/auth/login`、`/merchant/auth/login`），三端共享的不带（`/auth/logout`）
+  - `Router<S>` 的 `S` 是「还缺哪种 state」的编译期标记：端文件返回 `Router<AppState>`，`with_state` 一次性补成 `Router<()>`
+  - ⚠️ 尾斜杠是另一个路径：`/customer/register/` ≠ `/customer/register`
+- [x] **错误文件改名（2026-10-19）**：`errors.rs` → `error.rs`（4 处）
+  - 主流 crate（hyper / reqwest / axum-core）都是单数；模块里放的是「这一层的错误类型」
+- [x] **模块布局试过 `foo.rs` + `foo/`，已回退到 `mod.rs`**
+  - 19 个文件纯 rename、0 行内容变更，编译完全通过
+  - 回退原因：目录树里 `handler.rs` 和 `handler/`、`user.rs` 和 `user/` 同名成对，观感比一排 `mod.rs` 更乱
+  - 结论：这是**审美/习惯选择**，两种都合法；本项目选 `mod.rs`。`src/model/mod.rs` 无论如何都保留（生成物）
 
 ### 🚧 进行中 / 下一步（线性竖切：一次一条链路）
 
-- [ ] **`GET /users/{id}`** —— 用上零使用的 `NotFound` 变体，走通「`Option` → 404」路径，顺便验证 axum 路径参数（`Path<i32>`）
-- [ ] **登录态校验**：写一个 `AuthUser` 提取器（读 `Authorization` 头 → 查 token → 拿 user_id），把「必须登录才能访问」的接口保护起来
-  - `POST /register` 和 `POST /auth/login` 保持公开
+**⚠️ 先收尾 WIP（当前 5 个 dead_code warning 都来自「功能未接线」）**
+
+- [x] **删 `handler/customer/user/logout.rs` 和 `service/customer/user::logout`** —— logout 已经提到 `common/`，这两份是死代码，router 用的是 `handler::common::logout`
+- [ ] **删 `service/backoffice/user.rs`（97 行逐字节拷贝）** 或补上 `pub mod user;` 声明让它参与编译 —— 先定「三端是否共用 login/register 逻辑」（见上面 A/B/C 三个方案）
+- [x] **修 `merchant_login` 的孤儿 token bug**：把 `generate()` + `save()` 挪到 `match status` 的 `Active` 分支里
+- [x] **修 `ceate_merchant` 拼写** → `create_merchant`
+- [x] **清 `service/merchant/user/mod.rs` 的未用 import**
+
+**剩余 warning 对应的功能（不是死代码，别用 `#[allow]` 掩盖）**
+
+| warning | 等哪个功能 |
+|---|---|
+| `cache::kv::get` / `cache::token::get` never used | `AuthUser` 提取器 |
+| `create_merchant` / `NewMerchant` never used | 商户注册链路 |
+| `store::error::StoreError::NotFound` never constructed | `GET /users/{id}` |
+
+**然后往下走**
+
+- [ ] **商户注册链路** `POST /merchant/register`：用上 `create_merchant` / `NewMerchant`（`status` 默认 pending），让「注册 → 申请商户 → 商户登录」闭环
+- [ ] **`GET /users/{id}`** —— 用上零使用的 `NotFound` 变体，走通「`Option` → 404」路径，顺便验证 axum 路径参数
+  - ⚠️ **是 `Path<Uuid>` 不是 `Path<i32>`**（主键已迁 uuid，见上面）
+- [ ] **登录态校验**：写一个 `AuthUser` 提取器（`FromRequestParts`：读 `token` 头 → `cache::token::get` → 拿 `user_id`），把「必须登录才能访问」的接口保护起来
+  - `POST /register` / `POST /auth/login` 保持公开
+  - ⚠️ **前置决策**：`token:` key 前缀三端共用、value 只存 `user_id`，**分不出是哪个端发的**。要么 token 里带端类型，要么 key 分命名空间（`token:customer:` / `token:merchant:`）。**这题不定，AuthUser 写了也是错的**
+- [ ] **三端 URL 约定**（未定）：`/customer/auth/login` + `/merchant/auth/login`，还是共用 `/auth/login` 内部按账户类型分派？
 - [ ] `GET /users` 列表（会碰到分页这个大话题）
-- [ ] `GET /health` 接口（调接口时先确认服务活着）
 - [ ] `GET /health` 接口（调接口时先确认服务活着）
 
 ## 踩坑记录（重要教训）
@@ -341,9 +450,9 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 
     | 错误类型 | 文件 | 变体 | 只管什么 |
     |---|---|---|---|
-    | `StoreError` | `store/errors.rs` | `NotFound` / `Technical` | 存储（2 个够了，其余是业务概念） |
-    | `ServiceError` | `service/errors.rs` | + `Business` / `InvalidParams` / `Conflict` | 业务规则 |
-    | `ApiError` | `handler/errors.rs` | `Service(ServiceError)` | HTTP 状态码 |
+    | `StoreError` | `store/error.rs` | `NotFound` / `Technical` | 存储（2 个够了，其余是业务概念） |
+    | `ServiceError` | `service/error.rs` | + `Business` / `InvalidParams` / `Conflict` | 业务规则 |
+    | `ApiError` | `handler/error.rs` | `Service(ServiceError)` | HTTP 状态码 |
 
     **为什么 store 只有 2 个变体**：`Conflict`（用户名重复）是 service 判定的 —— store 只负责「这行插进去没有」，它不知道什么叫「用户名」。实际写代码时发现 `Conflict` 全在 service 层构造，store 一次没用过，于是把业务变体上移。
 46. **展平转换，不嵌套**：`ServiceError::Technical(DbErr)` 直接持有 sea-orm 的错误，**不**写 `ServiceError::Store(StoreError)`。嵌套会让 handler 的 match 变成三层 `ApiError::Service(ServiceError::Store(StoreError::Technical(e)))` —— 展平后只有两层。
@@ -363,7 +472,7 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 57. **axum 的 `Json` 提取器自带错误码**：JSON 合法但字段不匹配 → **422**（`JsonDataError`）；JSON 语法错 → 400；缺 `Content-Type: application/json` → **415**。这三个不用自己写
 58. **`Router` 方法顺序不能错**：`route()` → `layer()` → `with_state()`。`with_state` 必须最后（它终结 builder 链），`layer` 必须在 route 之后（否则拦不到路由）
 59. **抽 router 层后 `main.rs` 应该零 HTTP 知识**：`TraceLayer` 这类中间件放在 `app()` 内部，`main.rs` 只剩「init 日志 → 读 Config → 连库 → 装配 → 绑端口 → serve」。判据：`main.rs` 里除 `router::app(db)` 那一行之外不该出现任何 axum / tower 类型
-60. **空的占位层要标在文档里**：`cache/mod.rs` 目前 0 字节，`Config.valkey_url` 已读进来但无人使用，fred 依赖装了零引用。文档写明「空壳，待建」比假装它不存在好 —— 免得下次以为是已完成的活
+60. **空的占位层要标在文档里**：项目早期的 `cache/mod.rs` 曾是 0 字节，`Config.valkey_url` 已读进来但无人使用，fred 依赖装了零引用。文档写明「空壳，待建」比假装它不存在好 —— 免得下次以为是已完成的活
 
 ### 归一化与校验（register 的实战）
 
@@ -395,6 +504,38 @@ UserStore::find_by_username(&txn, "x").await        // 走事务，同一份代�
 75. **响应信封里 HTTP 状态码和 body 的 `code` 必须一致**：包了 `ApiResponse` 也**不能一律返 200**。HTTP 状态码给机器看（nginx / 监控 / HTTP 库的重试逻辑），body 的 code 给前端逻辑看。实现方式：`IntoResponse` 里 `StatusCode::from_u16(self.code)` 反推，**同一个字段驱动两处**，不可能不一致。
 76. **目录名别 stutter（service/user_service 实录）**：`src/service/user_service/{user,login}.rs` 里 `service` 说了两遍。父目录 `service/` 已经说明层次，子级只该说「哪个实体」。改名为 `service/user/mod.rs` 后调用路径从 `crate::service::user_store::` 变成 `crate::service::user::`，**少一层纯为命名的目录**。
 77. **URL 不认识你的代码结构**：`.route("handler/register", ...)` 把目录名写进了 URL。URL 是 API 契约，文件放哪不该影响它 —— 函数在 `handler/user/register.rs`，URL 叫 `/register` 完全没问题。另外**路由必须以 `/` 开头**，少了就是静默 404。
+
+### 三端重构期的坑（2026-10-15 起）
+
+78. **⚠️ 有副作用的代码写在「判定」之前 = 孤儿数据**：`merchant_login` 里 `generate()` + `save(cache, &token, ...)` 写在 `match merchant.status` **之前**。于是 Pending/Frozen/Rejected 的商户**登录失败**（返 5xx/4xx），但 Valkey 里留了个 24h 后才过期的 token —— 谁也不知道它存在、谁也用不掉
+    - **通用教训**：任何「写外部系统」的动作（DB insert / cache set / 发消息 / 发邮件）都必须**放在所有判定通过之后**。先算出 `token`，判完状态再 `save()`
+    - **自查手法**：在函数里搜 `save(` / `insert(` / `send(`，逐个问「这一行的前面，所有失败分支都走完了吗？」
+    - **姊妹篇**：踩坑 52 的 TOCTOU —— 同样是「判定」和「副作用」的先后顺序问题
+79. **⚠️ 空 `mod.rs` 让整个子目录「静默蒸发」**：`service/backoffice/mod.rs` 是 **0 字节**，没有 `pub mod user;` —— 于是 `service/backoffice/user/mod.rs` 里那 97 行代码**根本不参与编译**。`cargo check` 全绿、`grep` 能搜到内容、`git` 里文件好好躺着，但**一行都没跑**
+    - 根因和踩坑 21 同源：**「文件存在」不等于「代码在编译」**。Rust 的模块是**从 `mod.rs` 出发向下递归**的，父目录不声明 = 子文件不存在
+    - **哨兵**：`git status` 显示某个文件「存在」，但 `cargo check` 从没报过它的任何 warning（死代码也会 warning）→ 它不在编译范围里
+    - **自查手法**：`cargo check 2>&1 | grep <文件名关键词>` —— 零输出就说明它没进编译
+    - 对照组：`service/backoffice/mod.rs` 0 字节 → 子目录蒸发；`handler/backoffice/mod.rs` 1 字节（一个换行）→ 同样蒸发。**父 `mod.rs` 空 = 子目录白建**
+80. **⚠️ 三端拷贝是踩坑 33 的跨端版本**：`service/backoffice/user/mod.rs` 是 `service/customer/user/mod.rs` 的**逐字节拷贝**（`diff` 结果完全一致，97 行）。`register` / `login` / `validate` / `is_valid_email` / `MIN_PASSWORD_LEN` 全部重复
+    - 三端查的是**同一张 `users` 表**，登录逻辑本该只有一份
+    - 将来改密码规则要同时改三处，**忘一处就是 bug**，而且编译器完全不会提示（每个副本都自洽）
+    - **判断标准**：拷贝之前先问「这两份的**差异**是什么？」。差异 = 零 → 不该拷贝；差异 = 一条额外规则 → 应该抽公共部分，端里只留那一条
+81. **`store` 按表平铺 ≠ `service` 按实体分目录**：`store/user.rs` 是平铺文件，但 `service/customer/user/mod.rs` 是两层目录。两个层用了不同的分法 —— 这是**有意的**（store 的单位是表，service 的单位是「端 + 实体」），但会带来「两个层里 `user` 的位置不一样」的认知成本。见「层内组织的命名规律」章节
+    - 附带代价：`verify_password` 是纯 argon2 计算、不碰 DB，严格说**不属于任何一张表**，却被塞在 `store/user.rs` 里。**将来该上提到 `service/common/`**
+82. **⚠️ `cargo check` 不报错 ≠ 逻辑对**：本次 18 个 warning 里，**类型/借用层面的错误一个都没有**，但藏着 1 个真 bug（孤儿 token）、1 个拼写错误（`ceate_merchant`）、1 个没进编译的子目录（踩坑 79）。编译器只管**类型和借用**，语义错误、命名错误、装配错误一概不管
+    - **对策**：每个 WIP 阶段收尾都跑一遍 `cargo check 2>&1 | grep warning`，把 warning 清单当 TODO 清单逐条消
+83. **`store` 方法参数顺序要成对记**：`verify_password(stored_hash, plain)` —— **哈希在前**。而 `create_user(db, data)` 里 `data.password` 是**明文**（store 内部自己哈希）。两个函数的「密码参数」位置正好相反，记混了编译能过、运行必错
+    - 记忆锚点：凡是「已经存好的值」当查询条件（`find_by_username`），第一个参数就是它；凡是「要写进去的值」（`NewUser.password`），就是明文
+84. **⚠️ 空壳层比没有更危险**：`service/backoffice/`（97 行拷贝，不参与编译）、`handler/backoffice/mod.rs`（1 字节）、`store/merchant.rs`（曾经有 3 个未用 import + 1 个拼写错误的方法，且**从未被调用**）—— 这些「看起来已经做了」的代码，grep 得到、编辑器里能看到，但**不参与编译或从未执行**
+    - 文档写明「⚠️ WIP：不参与编译」比假装它不存在好 —— 免得下次以为是已完成的活（对照踩坑 60）
+85. **⚠️ 根 crate 的 sea-orm features 靠「workspace feature 统一」白拿**：根 `Cargo.toml` 只声明了 `["sqlx-postgres", "runtime-tokio-rustls"]`，而 `with-chrono` / `with-uuid` / `macros` 这些**只在 `migration/Cargo.toml` 里声明**。主 crate 能编译，是因为 cargo 把同一 workspace 内所有成员的 feature 求了并集
+    - **危险之处**：哪天上游改了这个「求并集」的行为（或把 migration 拆出 workspace），主 crate 立刻一堆 `cannot find type Uuid` / `DateTimeWithTimeZone`
+    - **正解**：根 crate 的 features 必须**自己写全**，不能依赖别的成员顺带打开
+    - **姊妹篇**：踩坑 23 —— 那次是「别用 default features（会拖进 sqlite + async-std）」，这次是「别用别人的 features」
+86. **⚠️ 归一化在 register 和 login 之间不对称**：`login` 做了 `trim().to_lowercase()`，`register` **只做了 `trim()`**（`service/customer/user/mod.rs:46-47`）。后果：注册 `ALICE` 存成 `ALICE`，登录 `Alice` 转成 `alice` 去查 —— **查不到**
+    - 这正是踩坑 62 说的「归一化必须在所有入口统一做」，文档里写了规则，代码里没落实
+    - **哨兵**：改任何一处归一化规则，`grep -rn "to_lowercase" src/` 看**每一处**的调用方是不是都跟着对齐了
+    - 附带：库里已经有 `alice` / `ALICE` 混存的脏数据（踩坑 61），修代码前先想好要不要配迁移
 
 ## 约定
 

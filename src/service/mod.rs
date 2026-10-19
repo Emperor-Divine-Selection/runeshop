@@ -1,5 +1,5 @@
 pub mod backoffice;
 pub mod common;
 pub mod customer;
-pub mod errors;
+pub mod error;
 pub mod merchant;

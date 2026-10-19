@@ -1,7 +1,7 @@
 use fred::prelude::*;
 use std::time::Duration;
 
-use crate::cache::errors::CacheError;
+use crate::cache::error::CacheError;
 
 /// 写入一个带过期时间的值。ttl 为 None 时永不过期
 pub async fn set_ex<V>(

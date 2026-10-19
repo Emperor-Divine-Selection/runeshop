@@ -5,7 +5,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, Query
 
 use crate::model::prelude::Users;
 use crate::model::users::{ActiveModel, Column, Model};
-use crate::store::errors::StoreError;
+use crate::store::error::StoreError;
 
 /// 创建用户的入参；`password` 是明文，由 store 内部哈希成 `password_hash`
 pub struct NewUser {

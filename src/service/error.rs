@@ -2,8 +2,8 @@ use fred::error::Error;
 use sea_orm::DbErr;
 use std::fmt;
 
-use crate::cache::errors::CacheError;
-use crate::store::errors::StoreError;
+use crate::cache::error::CacheError;
+use crate::store::error::StoreError;
 
 /// 业务错误类型
 #[derive(Debug)]

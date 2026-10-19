@@ -3,12 +3,12 @@ use sea_orm::ConnectionTrait;
 use std::sync::LazyLock;
 
 use crate::{
-    cache::token::{delete, generate, save},
+    cache::token::{generate, save},
     model::users::Model,
     store::user::{NewUser, create_user, find_by_email, find_by_username, verify_password},
 };
 
-use crate::service::errors::ServiceError;
+use crate::service::error::ServiceError;
 
 /// 用户登陆
 pub async fn login<C: ConnectionTrait>(
@@ -29,11 +29,6 @@ pub async fn login<C: ConnectionTrait>(
     let token = generate();
     save(cache, &token, user.id, None).await?;
     Ok(token)
-}
-
-/// 用户登出
-pub async fn logout(cache: &fred::clients::Client, token: &str) -> Result<(), ServiceError> {
-    Ok(delete(cache, token).await?)
 }
 
 /// 注册一个用户；

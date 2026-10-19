@@ -1,7 +1,7 @@
 use fred::error::Error;
 use std::fmt::{self};
 
-use crate::cache::errors::CacheError::Technical;
+use crate::cache::error::CacheError::Technical;
 
 #[derive(Debug)]
 pub enum CacheError {

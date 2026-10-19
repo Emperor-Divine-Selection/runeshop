@@ -2,7 +2,7 @@ use fred::prelude::*;
 use sea_orm::prelude::Uuid;
 use std::time::Duration;
 
-use crate::cache::errors::CacheError;
+use crate::cache::error::CacheError;
 use crate::cache::kv;
 
 /// token 存活时长：24小时。service 传了具体值就用它

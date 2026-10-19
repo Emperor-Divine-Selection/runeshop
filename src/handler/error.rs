@@ -1,7 +1,7 @@
 use crate::handler::response::ApiResponse;
 use axum::{http::StatusCode, response::IntoResponse};
 
-use crate::service::errors::ServiceError;
+use crate::service::error::ServiceError;
 
 pub enum ApiError {
     Service(ServiceError),
