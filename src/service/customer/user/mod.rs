@@ -1,14 +1,24 @@
 use regex::Regex;
-use sea_orm::ConnectionTrait;
+use sea_orm::{ConnectionTrait, sqlx::types::Uuid};
 use std::sync::LazyLock;
 
 use crate::{
     cache::token::{generate, save},
     model::users::Model,
-    store::user::{NewUser, create_user, find_by_email, find_by_username, verify_password},
+    store::user::{
+        NewUser, create_user, find_by_email, find_by_id, find_by_username, verify_password,
+    },
 };
 
 use crate::service::error::ServiceError;
+
+/// 取指定用户资料；查不到返 `NotFound`
+pub async fn profile<C: ConnectionTrait>(db: &C, user_id: &Uuid) -> Result<Model, ServiceError> {
+    let Some(user) = find_by_id(db, user_id).await? else {
+        return Err(ServiceError::NotFound("用户不存在".into()));
+    };
+    Ok(user)
+}
 
 /// 用户登陆
 pub async fn login<C: ConnectionTrait>(
@@ -20,10 +30,10 @@ pub async fn login<C: ConnectionTrait>(
     let username = username.trim().to_lowercase();
 
     let Some(user) = find_by_username(db, &username).await? else {
-        return Err(ServiceError::Business("用户名或密码错误".into()));
+        return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
     if !verify_password(&user.password_hash, password).await {
-        return Err(ServiceError::Business("用户名或密码错误".into()));
+        return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
 
     let token = generate();

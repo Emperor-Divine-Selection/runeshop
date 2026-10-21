@@ -20,10 +20,10 @@ pub async fn merchant_login<C: ConnectionTrait>(
     let username = username.trim().to_lowercase();
 
     let Some(user) = find_by_username(db, &username).await? else {
-        return Err(ServiceError::Business("用户名或密码错误".into()));
+        return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
     if !verify_password(&user.password_hash, password).await {
-        return Err(ServiceError::Business("用户名或密码错误".into()));
+        return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
 
     let Some(merchant) = find_merchant_by_user_id(db, user.id).await? else {

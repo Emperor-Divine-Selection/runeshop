@@ -76,10 +76,12 @@ runeshop/
     │   └── merchant.rs     # merchants 表的方法（create_merchant / find_merchant_by_user_id）
     ├── service/            # 业务层：按「端」分组，common/ 放三端共用
     │   ├── mod.rs          # 只放 pub mod 声明
-    │   ├── error.rs        # ServiceError（6 变体，业务错误在这里产生）
-    │   ├── common/mod.rs   # logout（删 token，三端共用）
+    │   ├── error.rs        # ServiceError（7 变体，业务错误在这里产生）
+    │   ├── common/mod.rs   # pub mod auth / logout
+    │   ├── common/auth.rs  # authenticate：查 token → user_id，无效返 Unauthorized
+    │   ├── common/logout.rs # 删 token，三端共用
     │   ├── customer/mod.rs # pub mod user
-    │   ├── customer/user/mod.rs   # register + login + validate + is_valid_email
+    │   ├── customer/user/mod.rs   # register + login + profile + validate + is_valid_email
     │   ├── merchant/mod.rs # pub mod user
     │   ├── merchant/user/mod.rs   # merchant_login（查 merchants 判状态）
     │   ├── backoffice/mod.rs      # ⚠️ 空文件
@@ -88,19 +90,20 @@ runeshop/
     │   ├── mod.rs          # 只放 pub mod 声明
     │   ├── error.rs        # ApiError（把 ServiceError 翻成 HTTP 状态码）
     │   ├── response.rs     # ApiResponse<T> 统一响应信封
+    │   ├── extractor.rs    # AuthUser 提取器 + bearer_token()（解析 Authorization 头）
     │   ├── common/mod.rs   # pub mod logout
     │   ├── common/logout.rs       # 三端共用登出
     │   ├── customer/mod.rs # pub mod user
-    │   ├── customer/user/mod.rs   # pub mod login / register
-    │   ├── customer/user/{login,register}.rs
+    │   ├── customer/user/mod.rs   # pub mod login / me / register + 公共 DTO UserResponse
+    │   ├── customer/user/{login,me,register}.rs
     │   ├── merchant/mod.rs # pub mod user
     │   ├── merchant/user/mod.rs   # pub mod login
     │   ├── merchant/user/login.rs # 商户登录（已挂 /merchant/auth/login）
     │   └── backoffice/mod.rs      # ⚠️ 空文件
     ├── router/             # 路由层：只管「URL → handler」
-    │   ├── mod.rs          # app(state)：merge 各端 + layer + with_state
+    │   ├── mod.rs          # app(state)：merge 各端 + TraceLayer + CorsLayer + with_state
     │   ├── common.rs       # /auth/logout
-    │   ├── customer.rs     # /customer/register、/customer/auth/login
+    │   ├── customer.rs     # /customer/register、/customer/auth/login、/customer/me
     │   ├── merchant.rs     # /merchant/auth/login
     │   └── backoffice.rs   # ⚠️ 空文件（尚未接入）
     ├── state/
@@ -268,7 +271,7 @@ find_by_username(&txn, "x").await        // 走事务，同一份代码
   - 文档注释写明「不查重（查重是 service 层的业务规则）」
 - [x] **错误三层架构**（每层只管自己的语言，**展平转换不嵌套**）
   - `StoreError`（`src/store/error.rs`）2 变体：`NotFound` / `Technical` —— 只管存储
-  - `ServiceError`（`src/service/error.rs`）6 变体 —— 业务错误在这里产生
+  - `ServiceError`（`src/service/error.rs`）7 变体 —— 业务错误在这里产生
   - `ApiError`（`src/handler/error.rs`）`Service(ServiceError)` + `IntoResponse` —— 翻成 HTTP
   - 转换链：`DbErr → StoreError → ServiceError → ApiError → HTTP`，每层一个 `From` impl
   - **为什么不嵌套**（`ServiceError::Store(StoreError)`）：嵌套会让 handler 的 match 变成三层 `ApiError::Service(ServiceError::Store(StoreError::Technical(e)))`，展平后只有两层
@@ -318,7 +321,7 @@ find_by_username(&txn, "x").await        // 走事务，同一份代码
   - 放在 `src/state/mod.rs` 而非 `main.rs` —— 否则 handler 要 `use crate::AppState` 反向依赖 main（见踩坑 44）
 - [x] **handler 按实体重组**：`handler/register/` + 散放的 `login.rs` → `handler/user/{register,login}.rs`
   - 一个实体的所有接口放一起；`login` 的 URL 是 `/auth/login`（动作）但代码归 user
-- [x] **登出接口** `POST /auth/logout`：读 `token` 请求头 → `cache::token::delete`
+- [x] **登出接口** `POST /auth/logout`：读 `Authorization: Bearer <token>` 头 → `cache::token::delete`（头名后来从 `token` 改过来了，见上面 401 语义统一那节）
 - [x] **主键 integer → uuid**（`m20261015_120000_alter_users_id_to_uuid`）
   - sea-query 没有「改列类型」的 DSL，只能**四步绕**：加新列（`uuid().default("gen_random_uuid()")`）→ drop 旧列 → rename → `modify_column().primary_key()`
   - `users.id` 和 `merchants.id` / `merchants.user_id` 全部 uuid
@@ -345,12 +348,26 @@ find_by_username(&txn, "x").await        // 走事务，同一份代码
   - 回退原因：目录树里 `handler.rs` 和 `handler/`、`user.rs` 和 `user/` 同名成对，观感比一排 `mod.rs` 更乱
   - 结论：这是**审美/习惯选择**，两种都合法；本项目选 `mod.rs`。`src/model/mod.rs` 无论如何都保留（生成物）
 
+- [x] **登录态校验**：`AuthUser` 提取器（`FromRequestParts`：读 `Authorization` 头 → `cache::token::get` → 拿 `user_id`）
+  - 头名从 `token` 改成 **`Authorization: Bearer <token>`**（趁没有客户端，改 1 处 vs 以后改 N 处）
+  - `bearer_token()` 只做「解析头」；`logout` 复用它但**不校验**（过期 token 也要能登出 → 幂等）
+  - **token 语义 = 身份，不带端类型**：商户状态可变，token 里存角色 = 缓存了会失真的权限。角色由端点查库判定（将来的 `MerchantUser` 提取器 = `AuthUser` + 查 `merchants.status`）
+  - ✅ `GET /customer/me` 已挂上 —— 提取器的第一个使用场景，也是前端「刷新后保持登录」的唯一依据
+- [x] **401 语义统一**：`ServiceError::Unauthorized` 新增，映射 401
+  - 没带 Authorization 头 / 头格式不对 / token 过期 → 401
+  - 登录失败（密码错、用户不存在）→ **从 400 改成 401**（文案仍模糊「用户名或密码错误」，防枚举）
+  - ⚠️ 前端要靠「401 → 清 token + 跳登录页」兜底会话失效，状态码混用前端只能比对文案
+- [x] **CORS**：`CorsLayer` 装在 `app()` 里（`allow_origin/allow_methods/allow_headers` 全 `Any`）—— 前端跨域必装，否则浏览器直接拦
+  - ⚠️ 开发期用 `Any`，上线要收紧成具体域名
+- [x] **`UserResponse` DTO 搬家**：`handler/customer/user/register.rs` → `handler/customer/user/mod.rs`（注册和 /me 共用）
+  - ⚠️ 搬之前两份同名 DTO 并存 → **是两个不同类型**，改字段要改两处
+
 ### 🚧 进行中 / 下一步（线性竖切：一次一条链路）
 
-**⚠️ 先收尾 WIP（当前 5 个 dead_code warning 都来自「功能未接线」）**
+**⚠️ 先收尾 WIP（当前 3 个 dead_code warning 都来自「功能未接线」）**
 
 - [x] **删 `handler/customer/user/logout.rs` 和 `service/customer/user::logout`** —— logout 已经提到 `common/`，这两份是死代码，router 用的是 `handler::common::logout`
-- [ ] **删 `service/backoffice/user.rs`（97 行逐字节拷贝）** 或补上 `pub mod user;` 声明让它参与编译 —— 先定「三端是否共用 login/register 逻辑」（见上面 A/B/C 三个方案）
+- [ ] **删 `service/backoffice/user/mod.rs`（97 行逐字节拷贝）** 或补上 `pub mod user;` 声明让它参与编译 —— 先定「三端是否共用 login/register 逻辑」（见上面 A/B/C 三个方案）
 - [x] **修 `merchant_login` 的孤儿 token bug**：把 `generate()` + `save()` 挪到 `match status` 的 `Active` 分支里
 - [x] **修 `ceate_merchant` 拼写** → `create_merchant`
 - [x] **清 `service/merchant/user/mod.rs` 的未用 import**
@@ -359,19 +376,15 @@ find_by_username(&txn, "x").await        // 走事务，同一份代码
 
 | warning | 等哪个功能 |
 |---|---|
-| `cache::kv::get` / `cache::token::get` never used | `AuthUser` 提取器 |
 | `create_merchant` / `NewMerchant` never used | 商户注册链路 |
-| `store::error::StoreError::NotFound` never constructed | `GET /users/{id}` |
+| `store::error::StoreError::NotFound` never constructed | ⚠️ 见踩坑 90 —— 按 `find_by_xxx` 返 `Option` 的约定，store 层**根本不会**返回 NotFound，这一条大概会一直死着 |
 
 **然后往下走**
 
 - [ ] **商户注册链路** `POST /merchant/register`：用上 `create_merchant` / `NewMerchant`（`status` 默认 pending），让「注册 → 申请商户 → 商户登录」闭环
-- [ ] **`GET /users/{id}`** —— 用上零使用的 `NotFound` 变体，走通「`Option` → 404」路径，顺便验证 axum 路径参数
+- [ ] **`GET /users/{id}`** —— 走通「`Option` → 404」路径，顺便验证 axum 路径参数
   - ⚠️ **是 `Path<Uuid>` 不是 `Path<i32>`**（主键已迁 uuid，见上面）
-- [ ] **登录态校验**：写一个 `AuthUser` 提取器（`FromRequestParts`：读 `token` 头 → `cache::token::get` → 拿 `user_id`），把「必须登录才能访问」的接口保护起来
-  - `POST /register` / `POST /auth/login` 保持公开
-  - ⚠️ **前置决策**：`token:` key 前缀三端共用、value 只存 `user_id`，**分不出是哪个端发的**。要么 token 里带端类型，要么 key 分命名空间（`token:customer:` / `token:merchant:`）。**这题不定，AuthUser 写了也是错的**
-- [ ] **三端 URL 约定**（未定）：`/customer/auth/login` + `/merchant/auth/login`，还是共用 `/auth/login` 内部按账户类型分派？
+- [ ] **角色判定提取器** `MerchantUser`：`AuthUser` + 查 `merchants` 表判 `status == Active`（token 不带端类型的代价就在这补回来）
 - [ ] `GET /users` 列表（会碰到分页这个大话题）
 - [ ] `GET /health` 接口（调接口时先确认服务活着）
 
@@ -431,7 +444,7 @@ find_by_username(&txn, "x").await        // 走事务，同一份代码
 35. **glob import 撞名要靠别名**：两个模块的 `use xxx::*` 同时带进 Model/Entity/Column，报 `Model is ambiguous` —— 主实体 glob，次要实体用 `{Entity as Transactions, Model as TransactionModel, ...}` 点名加别名
 36. **类型名必须大写开头**：`vec` 写进类型位置直接报 `cannot find type`
 37. **金额一律 Decimal，没有字面量**：`Decimal::ZERO` / `Decimal::ONE`，从字符串 parse（`"19.99".parse::<Decimal>()`）；绝不用 f64 存金额
-38. **`Users::find_by_xxx` 便捷方法需要 `mock` feature**：没开就得用原始写法 `Users::find().filter(Column::Username.eq(v)).one(db)`。学习阶段不装 mock，用原始写法
+38. **`Users::find_by_xxx` 便捷方法需要 `mock` feature**：没开就得用原始写法 `Users::find().filter(Column::Username.eq(v)).one(db)`。学习阶段不装 mock，用原始写法 —— ⚠️ **这条在 sea-orm 2.0.3 已不成立**（`find_by_id` 没有 mock gate），见踩坑 89
 39. **migrate 模板的 `todo!()` 要删**：`migrate init` / `migrate generate` 生成的模板里带 `todo!()`，一执行就 panic
 40. **回滚 `down()` 有数据时会失败**：`SET NOT NULL` 遇到 NULL 值直接报错 —— 这是**数据不允许回退**，不是迁移写错。表空时随便回退
 
@@ -451,7 +464,7 @@ find_by_username(&txn, "x").await        // 走事务，同一份代码
     | 错误类型 | 文件 | 变体 | 只管什么 |
     |---|---|---|---|
     | `StoreError` | `store/error.rs` | `NotFound` / `Technical` | 存储（2 个够了，其余是业务概念） |
-    | `ServiceError` | `service/error.rs` | + `Business` / `InvalidParams` / `Conflict` | 业务规则 |
+    | `ServiceError` | `service/error.rs` | + `Business` / `InvalidParams` / `Conflict` / `Unauthorized` | 业务规则 |
     | `ApiError` | `handler/error.rs` | `Service(ServiceError)` | HTTP 状态码 |
 
     **为什么 store 只有 2 个变体**：`Conflict`（用户名重复）是 service 判定的 —— store 只负责「这行插进去没有」，它不知道什么叫「用户名」。实际写代码时发现 `Conflict` 全在 service 层构造，store 一次没用过，于是把业务变体上移。
@@ -536,6 +549,24 @@ find_by_username(&txn, "x").await        // 走事务，同一份代码
     - 这正是踩坑 62 说的「归一化必须在所有入口统一做」，文档里写了规则，代码里没落实
     - **哨兵**：改任何一处归一化规则，`grep -rn "to_lowercase" src/` 看**每一处**的调用方是不是都跟着对齐了
     - 附带：库里已经有 `alice` / `ALICE` 混存的脏数据（踩坑 61），修代码前先想好要不要配迁移
+
+### axum 提取器 / uuid 类型（2026-10-21 认证闭环）
+
+87. **⚠️ `&Uuid` 不能 `into()` 成 `Uuid`**：`uuid` crate **没有** `impl From<&Uuid> for Uuid`（对比 std 给 `String`/`Vec<T>` 都提供了 `From<&T>`），所以 `user_id.into()`（`user_id: &Uuid`，目标 `Uuid`）**编译不过**。`Uuid` 是 `Copy` → 用 `*user_id`
+    - **连带**：`Column::Id.eq(*user_id)` 里 `UuidColumn::eq` 的约束是 `V: Into<Uuid>`（sea-orm 2.x 的**类型化列**，`src/entity/column/types/with_uuid.rs`）
+88. **`clone()` 在引用上的返回值是"推"出来的**：`user_id: &Uuid` 时 `user_id.clone()` 返回 **`Uuid` 而不是 `&Uuid`** —— 方法解析先试 `Uuid::clone`（接收者 `&Uuid` 刚好匹配），`<&Uuid>::clone` 需要接收者 `&&Uuid`（多一次自动引用，优先级更低）
+    - 能编译，但类型不是写出来的 → 读代码时容易看错。**`Uuid` 是 `Copy`，直接 `*user_id`**（clippy 的 `clone_on_copy` 也会盯上 clone 写法）
+89. **⚠️ 踩坑 38 在 sea-orm 2.0.3 已经不成立**：查 `sea-orm-2.0.3/src/entity/base_entity.rs`，`EntityTrait::find_by_id` **没有** `mock` gate（`mock` feature 只 gate `DatabaseConnection::from_mock` 那类），所以 `Users::find_by_id(uuid)` 在本项目**可用**。踩坑 38 是 1.x 时期的结论 —— **版本升级后要重新验证老结论**
+    - 顺带：`find_by_id` 自带主键条件，再 `.filter(Column::Id.eq(...))` 是重复的
+90. **⚠️ store 层的 `NotFound` 变体大概是死代码**：`find_by_xxx` 按约定返 `Option`（不是 `Result`），store 层**根本不会**返回 NotFound —— 「查不到」由 service 层翻成 `ServiceError::NotFound` → 404。所以 AGENTS.md 里「`GET /users/{id}` 会用上 `StoreError::NotFound`」的说法是错的（除非给 store 加一个 `get_by_id` 返 `Result`）
+91. **提取器（extractor）是 axum 的核心抽象**：`State` / `Json` / `Path` / `Query` 全是提取器 = 「从请求里取一份数据交给 handler」
+    - 自己写一个 = 实现 `FromRequestParts`（trait 在 **axum-core** 里，axum 只是再导出；trait 方法声明为 `-> impl Future + Send`，**实现时可以用 `async fn`**）
+    - **为什么用 `FromRequestParts` 不用 `FromRequest`**：前者不消费 body，能排在 `Json` 前面；后者只能当最后一个参数
+    - `type Rejection` = 「提取失败时返回什么」，本项目选 `ApiError`（实现了 `IntoResponse`），于是 401 走统一信封
+    - `Router<S>` 的 `S` 是**「还缺哪种 state」的编译期标记**：端文件返 `Router<AppState>`，`with_state` 一次性补成 `Router<()>`；**只有 `Router<()>` 实现了 `Service`**，所以没装配完的路由传不进 `axum::serve`
+92. **⚠️ 同一个 DTO 在两个模块各定义一份 = 两个不同的 Rust 类型**：`UserResponse` 曾在 `register.rs` 和 `user/mod.rs` 各有一份 —— 编译能过，但改字段要改两处，且 `register_handler` / `me_handler` 返回的类型不是同一个
+    - **正解**：公共 DTO 放该实体的 `mod.rs`（`handler/customer/user/mod.rs`），子模块 `use super::UserResponse;`
+    - **哨兵**：`grep -rn 'struct UserResponse' src/` 出现两次 = 重复定义
 
 ## 约定
 

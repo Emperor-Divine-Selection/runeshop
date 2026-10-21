@@ -1,6 +1,7 @@
 use argon2::{Argon2, PasswordHasher, PasswordVerifier};
 use sea_orm::ActiveValue::Set;
 use sea_orm::DbErr;
+use sea_orm::sqlx::types::Uuid;
 use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 
 use crate::model::prelude::Users;
@@ -42,6 +43,17 @@ pub async fn find_by_username<C: ConnectionTrait>(
 ) -> Result<Option<Model>, StoreError> {
     Ok(Users::find()
         .filter(Column::Username.eq(username))
+        .one(db)
+        .await?)
+}
+
+/// 按用户id查用户，查不到返回 Ok(None)
+pub async fn find_by_id<C: ConnectionTrait>(
+    db: &C,
+    user_id: &Uuid,
+) -> Result<Option<Model>, StoreError> {
+    Ok(Users::find()
+        .filter(Column::Id.eq(*user_id))
         .one(db)
         .await?)
 }

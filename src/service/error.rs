@@ -12,6 +12,7 @@ pub enum ServiceError {
     Business(String),
     InvalidParams(String),
     Conflict(String),
+    Unauthorized(String),
     Database(DbErr),
     Cache(Error),
 }
@@ -40,6 +41,7 @@ impl fmt::Display for ServiceError {
             Self::Business(msg) => write!(f, "[Business] {msg}"),
             Self::InvalidParams(msg) => write!(f, "[InvalidParams] {msg}"),
             Self::Conflict(msg) => write!(f, "[Conflict] {msg}"),
+            Self::Unauthorized(msg) => write!(f, "[Unauthorized] {msg}"),
             Self::Database(e) => write!(f, "[Technical] {}", e),
             Self::Cache(e) => write!(f, "[Technical] {}", e),
         }

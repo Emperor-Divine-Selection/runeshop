@@ -1,8 +1,7 @@
 use axum::{Json, extract::State, http::StatusCode};
-use sea_orm::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use crate::model::users::Model;
+use crate::handler::customer::user::UserResponse;
 use crate::service::customer::user::register;
 use crate::state::AppState;
 use crate::store::user::NewUser;
@@ -18,30 +17,6 @@ pub struct RegisterRequest {
     pub email: String,
     pub avatar: Option<String>,
     pub bio: Option<String>,
-}
-
-/// 注册响应体（脱敏：绝不含 password_hash）
-#[derive(Serialize)]
-pub struct UserResponse {
-    pub id: Uuid,
-    pub username: String,
-    pub email: String,
-    pub avatar: Option<String>,
-    pub bio: Option<String>,
-    pub create_time: DateTimeWithTimeZone,
-}
-
-impl From<Model> for UserResponse {
-    fn from(value: Model) -> Self {
-        Self {
-            id: value.id,
-            username: value.username,
-            email: value.email,
-            avatar: value.avatar,
-            bio: value.bio,
-            create_time: value.create_time,
-        }
-    }
 }
 
 /// POST /register —— 注册；用户名/邮箱重复返回 409
