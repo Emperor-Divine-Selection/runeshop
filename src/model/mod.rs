@@ -2,6 +2,8 @@
 
 pub mod prelude;
 
+pub mod backoffice_users;
+pub mod merchant_applications;
 pub mod merchants;
 pub mod sea_orm_active_enums;
 pub mod users;

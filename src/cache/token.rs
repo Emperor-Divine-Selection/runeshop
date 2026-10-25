@@ -11,6 +11,33 @@ const DEFAULT_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// key 前缀。将来还有 user:1:xxx 等，靠前缀区分避免撞车
 const KEY_PREFIX: &str = "token:";
 
+/// token 属于哪一端。登录时写进去，提取器按端校验
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenKind {
+    Customer,
+    Merchant,
+    Backoffice,
+}
+
+impl TokenKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Customer => "customer",
+            Self::Merchant => "merchant",
+            Self::Backoffice => "backoffice",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "customer" => Some(Self::Customer),
+            "merchant" => Some(Self::Merchant),
+            "backoffice" => Some(Self::Backoffice),
+            _ => None,
+        }
+    }
+}
+
 /// 拼出 Valkey 里的完整 key
 fn key(token: &str) -> String {
     format!("{KEY_PREFIX}{token}")
@@ -23,30 +50,39 @@ pub fn generate() -> String {
     hex::encode(bytes)
 }
 
-///  存 token → user_id；`ttl` 传 `None` 时用默认 24 小时
+/// 存 token → `端:user_id`；`ttl` 传 `None` 时用默认 24 小时
 pub async fn save(
     client: &Client,
     token: &str,
+    kind: TokenKind,
     user_id: Uuid,
     ttl: Option<Duration>,
 ) -> Result<(), CacheError> {
-    // fred 不支持 Uuid —— 转字符串存
+    let value = format!("{}:{}", kind.as_str(), user_id);
     kv::set_ex(
         client,
         &key(token),
-        user_id.to_string(),
+        value,
         Some(ttl.unwrap_or(DEFAULT_TTL)),
     )
     .await
 }
 
-/// 取 token 对应的 user_id；不存在、已过期、或格式无效都返 `Ok(None)`
-pub async fn get(client: &Client, token: &str) -> Result<Option<Uuid>, CacheError> {
+/// 取 token 对应的「端 + user_id」；不存在、已过期、或格式无效都返 `Ok(None)`
+pub async fn get(client: &Client, token: &str) -> Result<Option<(TokenKind, Uuid)>, CacheError> {
     let Some(raw) = kv::get::<String>(client, &key(token)).await? else {
         return Ok(None);
     };
-    // parse 失败（例如旧数据存的是整数）= 当作无效 token
-    Ok(raw.parse().ok())
+    let Some((kind, user_id)) = raw.split_once(':') else {
+        return Ok(None);
+    };
+    let Some(kind) = TokenKind::parse(kind) else {
+        return Ok(None);
+    };
+    let Ok(user_id) = user_id.parse() else {
+        return Ok(None);
+    };
+    Ok(Some((kind, user_id)))
 }
 
 /// 注销：删掉 token

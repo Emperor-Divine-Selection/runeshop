@@ -17,9 +17,10 @@ pub async fn create_merchant<C: ConnectionTrait>(
     db: &C,
     data: NewMerchant,
 ) -> Result<Model, StoreError> {
+    let shop_name = data.shop_name.trim().to_string();
     Ok(ActiveModel {
         user_id: Set(data.user_id),
-        shop_name: Set(data.shop_name),
+        shop_name: Set(shop_name),
         status: Set(MerchantStatus::Pending),
         ..Default::default()
     }

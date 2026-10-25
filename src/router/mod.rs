@@ -14,6 +14,7 @@ pub fn app(state: AppState) -> Router {
     common::routes()
         .merge(customer::routes())
         .merge(merchant::routes())
+        .merge(backoffice::routes())
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()

@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table("users")
                     .if_not_exists()
-                    .col(pk_auto("id"))
+                    .col(pk_uuid("id"))
                     .col(
                         timestamp_with_time_zone("create_time")
                             .default(Expr::current_timestamp())

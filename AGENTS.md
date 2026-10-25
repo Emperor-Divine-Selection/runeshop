@@ -568,6 +568,91 @@ find_by_username(&txn, "x").await        // 走事务，同一份代码
     - **正解**：公共 DTO 放该实体的 `mod.rs`（`handler/customer/user/mod.rs`），子模块 `use super::UserResponse;`
     - **哨兵**：`grep -rn 'struct UserResponse' src/` 出现两次 = 重复定义
 
+## 代码纪律（写代码前先看）
+
+> 目标：半年后回来还能一眼看懂。**宁可多写一行直白代码，也不写一行需要猜的「聪明」代码。**
+
+### 1. 命名说人话
+
+- 名字回答「是什么 / 干什么」，不回答「怎么实现」
+- 函数用动词开头：`create_user` / `find_by_id` / `validate`；布尔用 `is_` / `has_` / `can_` 开头
+- **函数名要能脱离目录独立读懂**：`apply` / `login` / `update` 单独看不知道操作对象 → 带上实体：`apply_merchant` / `merchant_login` / `update_order_status`。目录是补充，不是替代
+- 集合用复数：`users` / `merchants`；单个用单数：`user` / `merchant`
+- 不用自造缩写。`db` / `cache` / `id` / `url` 可以，`usr` / `mgr` / `val` 不行
+- 宁可名字长一点，也不要 `data` / `info` / `temp` 这种看不出内容的词
+
+```rust
+// 差：看不出 data 是什么
+fn handle(data: Data) -> Result<()>
+
+// 好：一眼知道是注册请求、返回用户
+fn register_user(request: RegisterRequest) -> Result<User, ServiceError>
+```
+
+### 2. 卫兵写法：先挡异常，再写主干
+
+- 参数不对、找不到、没权限 → **立刻 return / Err**，主干逻辑不要往 if 里面塞
+- 主干代码保持在最外层缩进；函数里嵌套最多两层
+- 用 `let Some(x) = ... else { return ... }`、`if !ok { return ... }`，不要写成「金字塔」
+
+```rust
+// 差：主干被三层 if 埋住
+if let Some(user) = find_user(db, id).await? {
+    if user.status == Status::Active {
+        if verify_password(&user.password_hash, password) {
+            return Ok(user);
+        }
+    }
+}
+Err(ServiceError::Unauthorized("用户名或密码错误".into()))
+
+// 好：异常先挡掉，主干一眼看完
+let Some(user) = find_user(db, id).await? else {
+    return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
+};
+if user.status != Status::Active {
+    return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
+}
+if !verify_password(&user.password_hash, password) {
+    return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
+}
+Ok(user)
+```
+
+### 3. 函数只做一件事，不写超大函数
+
+- 判据：能用一句话说清「它做什么」。需要「并且 / 然后」才能说清 → 拆
+- 经验阈值：**超过 40 行先想拆，超过 60 行基本必须拆**
+- service 按步骤拆成小函数：`归一化 → 校验 → 查重 → 入库`，每一步都能单独看懂
+- 一次只做一件事的副作用：写库 / 写缓存 / 发消息**不要**和参数校验混在一起
+- 层与层不越界：HTTP 概念（状态码、Header）留在 handler；业务规则留在 service；SQL 留在 store
+
+### 4. 错误处理：早失败、不吞、不裸 unwrap
+
+- **请求路径禁止 `unwrap()` / `expect()` / `panic!()`**。一个 404 不能让整个服务死掉
+- `expect()` 只允许出现在启动阶段（读配置、连数据库）
+- 优先 `?`；需要补上下文时 `map_err(|e| ...)`，不要丢掉原始错误
+- 错误变体带 payload（`NotFound(String)`），每层只说自己层的错误；`From` 只包装不拆解
+- 不写 `let _ = result;` 吞错误。确实要忽略，必须写清楚为什么
+- 用户输入不能直接 `unwrap`；外部数据解析失败一律当「无效」处理，不要 panic
+- 错误消息要能定位问题，但登录失败这类要模糊（防用户名枚举）
+
+### 5. 直白优先
+
+- 链式调用超过两步就拆成有名字的中间变量，别让人在脑子里跑一遍
+- 不炫技：能用 `for` 看懂就别硬凹 `fold`；能写两行就别写一行超长表达式
+- 魔法数字提常量：`const MIN_PASSWORD_LEN: usize = 8;`
+- 注释解释「为什么」，不复述「做了什么」；代码本身应该能说明「做了什么」
+
+### 6. 收尾自查（每次收尾都过一遍）
+
+- `cargo check` 没有新增 error / warning（warning 当 TODO，不要用 `#[allow]` 藏）
+- `grep -rn "unwrap()\|expect(" src/`，请求路径上的逐个确认
+- 每个 `if` 条件代入「正常值 / 异常值」各验一遍（防布尔写反）
+- 有副作用的代码（写库 / 写缓存 / 发消息）是否在所有失败分支之后？
+- 新增迁移是否注册到 `migration/src/lib.rs`？
+- 新增的 service / handler / router 三处是否都接线了？（别留「文件存在但不参与编译」）
+
 ## 约定
 
 - 镜像名 / 服务名 / 容器名一律小写

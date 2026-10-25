@@ -19,15 +19,19 @@ pub struct NewUser {
 
 /// 创建用户；不查重（查重是 service 层的业务规则）
 pub async fn create_user<C: ConnectionTrait>(db: &C, data: NewUser) -> Result<Model, StoreError> {
+    let username = data.username.trim().to_string();
+    let password = data.password.trim().to_string();
+    let email = data.email.trim().to_string();
+
     let hash = Argon2::default()
-        .hash_password(data.password.as_bytes())
+        .hash_password(password.as_bytes())
         .map_err(|e| StoreError::Technical(DbErr::Custom(e.to_string())))?
         .to_string();
 
     Ok(ActiveModel {
-        username: Set(data.username),
+        username: Set(username),
         password_hash: Set(hash),
-        email: Set(data.email),
+        email: Set(email),
         avatar: Set(data.avatar),
         bio: Set(data.bio),
         ..Default::default()

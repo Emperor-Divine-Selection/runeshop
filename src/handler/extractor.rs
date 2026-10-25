@@ -1,6 +1,11 @@
+use crate::cache::token::TokenKind;
 use crate::handler::error::ApiError;
+use crate::model::backoffice_users::Model as BackofficeUserModel;
+use crate::model::merchants::Model as MerchantModel;
+use crate::service::backoffice::user::authenticate_backoffice;
 use crate::service::common::auth::authenticate;
 use crate::service::error::ServiceError::Unauthorized;
+use crate::service::merchant::user::authenticate_merchant;
 use crate::state::AppState;
 
 use axum::extract::FromRequestParts;
@@ -10,19 +15,55 @@ use axum::http::header::AUTHORIZATION;
 use sea_orm::sqlx::types::Uuid;
 
 #[derive(Debug, Clone)]
-pub struct AuthUser {
+pub struct CustomerUser {
     pub user_id: Uuid,
 }
 
-impl FromRequestParts<AppState> for AuthUser {
+impl FromRequestParts<AppState> for CustomerUser {
     type Rejection = ApiError;
     async fn from_request_parts(
         parts: &mut axum::http::request::Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let token = bearer_token(&parts.headers)?;
-        let user_id = authenticate(&state.cache, token).await?;
-        Ok(AuthUser { user_id })
+        let user_id = authenticate(&state.cache, token, TokenKind::Customer).await?;
+        Ok(CustomerUser { user_id })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MerchantUser {
+    pub merchant: MerchantModel,
+}
+
+impl FromRequestParts<AppState> for MerchantUser {
+    type Rejection = ApiError;
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let token = bearer_token(&parts.headers)?;
+        let user_id = authenticate(&state.cache, token, TokenKind::Merchant).await?;
+        let merchant = authenticate_merchant(&state.db, user_id).await?;
+        Ok(MerchantUser { merchant })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BackofficeUser {
+    pub user: BackofficeUserModel,
+}
+
+impl FromRequestParts<AppState> for BackofficeUser {
+    type Rejection = ApiError;
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let token = bearer_token(&parts.headers)?;
+        let user_id = authenticate(&state.cache, token, TokenKind::Backoffice).await?;
+        let user = authenticate_backoffice(&state.db, user_id).await?;
+        Ok(BackofficeUser { user })
     }
 }
 
@@ -52,7 +93,7 @@ pub fn bearer_token(headers: &HeaderMap) -> Result<&str, ApiError> {
         return Err(ApiError::Service(Unauthorized(
             "Authorization 头格式应为 Bearer <token>".into(),
         )));
-    };
+    }
 
     let token = token.trim();
     if token.is_empty() {

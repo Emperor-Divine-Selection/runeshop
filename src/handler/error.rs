@@ -23,6 +23,7 @@ impl IntoResponse for ApiError {
             }
             Self::Service(ServiceError::Conflict(msg)) => (StatusCode::CONFLICT, msg),
             Self::Service(ServiceError::Unauthorized(msg)) => (StatusCode::UNAUTHORIZED, msg),
+            Self::Service(ServiceError::Forbidden(msg)) => (StatusCode::FORBIDDEN, msg),
             Self::Service(ServiceError::Database(e)) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }

@@ -3,7 +3,7 @@ use sea_orm::{ConnectionTrait, sqlx::types::Uuid};
 use std::sync::LazyLock;
 
 use crate::{
-    cache::token::{generate, save},
+    cache::token::{generate, save, TokenKind},
     model::users::Model,
     store::user::{
         NewUser, create_user, find_by_email, find_by_id, find_by_username, verify_password,
@@ -32,12 +32,12 @@ pub async fn login<C: ConnectionTrait>(
     let Some(user) = find_by_username(db, &username).await? else {
         return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
-    if !verify_password(&user.password_hash, password).await {
+    if !verify_password(&user.password_hash, password.trim()).await {
         return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
 
     let token = generate();
-    save(cache, &token, user.id, None).await?;
+    save(cache, &token, TokenKind::Customer, user.id, None).await?;
     Ok(token)
 }
 
@@ -48,8 +48,9 @@ pub async fn register<C: ConnectionTrait>(
     mut data: NewUser,
 ) -> Result<Model, ServiceError> {
     // 1. 归一化：去掉首尾空白，后续校验/查重/入库都用这个值
-    data.username = data.username.trim().to_string();
-    data.email = data.email.trim().to_string();
+    data.username = data.username.trim().to_lowercase();
+    data.email = data.email.trim().to_lowercase();
+    data.password = data.password.trim().to_string();
 
     // 2. 校验参数（不碰数据库，比查重便宜）
     validate(&data)?;
