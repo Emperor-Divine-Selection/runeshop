@@ -35,6 +35,12 @@ impl From<CacheError> for ServiceError {
     }
 }
 
+impl From<DbErr> for ServiceError {
+    fn from(value: DbErr) -> Self {
+        Self::Database(value)
+    }
+}
+
 impl fmt::Display for ServiceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

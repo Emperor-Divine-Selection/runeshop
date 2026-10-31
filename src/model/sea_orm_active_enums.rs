@@ -3,14 +3,20 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "merchant_status")]
-pub enum MerchantStatus {
+#[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "application_status")]
+pub enum ApplicationStatus {
     #[sea_orm(string_value = "pending")]
     Pending,
+    #[sea_orm(string_value = "approved")]
+    Approved,
+    #[sea_orm(string_value = "rejected")]
+    Rejected,
+}
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "merchant_status")]
+pub enum MerchantStatus {
     #[sea_orm(string_value = "active")]
     Active,
     #[sea_orm(string_value = "frozen")]
     Frozen,
-    #[sea_orm(string_value = "rejected")]
-    Rejected,
 }

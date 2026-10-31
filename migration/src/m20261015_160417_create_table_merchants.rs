@@ -16,7 +16,7 @@ impl MigrationTrait for Migration {
             .create_type(
                 Type::create()
                     .as_enum("merchant_status")
-                    .values(["pending", "active", "frozen", "rejected"])
+                    .values(["active", "frozen"])
                     .to_owned(),
             )
             .await?;
@@ -43,9 +43,9 @@ impl MigrationTrait for Migration {
                         enumeration(
                             "status",
                             "merchant_status",
-                            ["pending", "active", "frozen", "rejected"],
+                            ["active", "frozen"],
                         )
-                        .default("pending"),
+                        .default("active"),
                     )
                     .foreign_key(
                         ForeignKey::create()

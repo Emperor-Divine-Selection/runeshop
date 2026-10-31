@@ -35,3 +35,12 @@ impl<T: Serialize> IntoResponse for ApiResponse<T> {
         (status, Json(self)).into_response()
     }
 }
+
+/// 分页信封：列表接口统一返回 items + 总条数 + 当前页信息
+#[derive(Serialize)]
+pub struct PageResponse<T> {
+    pub items: Vec<T>,
+    pub total: u64,
+    pub page: u64,
+    pub page_size: u64,
+}

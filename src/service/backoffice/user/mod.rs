@@ -1,7 +1,9 @@
+pub mod bootstrap;
+
 use sea_orm::{ConnectionTrait, sqlx::types::Uuid};
 
 use crate::{
-    cache::token::{delete, generate, save, TokenKind},
+    cache::token::{TokenKind, generate, save},
     model::backoffice_users::Model,
     service::common::validation::validate,
     store::backoffice_user::{
@@ -72,11 +74,4 @@ pub async fn backoffice_login<C: ConnectionTrait>(
     let token = generate();
     save(cache, &token, TokenKind::Backoffice, user.id, None).await?;
     Ok(token)
-}
-
-pub async fn backoffice_logout(
-    cache: &fred::clients::Client,
-    token: &str,
-) -> Result<(), ServiceError> {
-    Ok(delete(cache, token).await?)
 }

@@ -12,7 +12,7 @@ pub struct NewMerchant {
     pub shop_name: String,
 }
 
-/// 为指定用户创建商户申请（status = pending）；不查重（查重是 service 层的业务规则）
+/// 为用户创建商户（status = active）；应在申请审核通过时调用，不查重（查重是 service 层的业务规则）
 pub async fn create_merchant<C: ConnectionTrait>(
     db: &C,
     data: NewMerchant,
@@ -21,7 +21,7 @@ pub async fn create_merchant<C: ConnectionTrait>(
     Ok(ActiveModel {
         user_id: Set(data.user_id),
         shop_name: Set(shop_name),
-        status: Set(MerchantStatus::Pending),
+        status: Set(MerchantStatus::Active),
         ..Default::default()
     }
     .insert(db)

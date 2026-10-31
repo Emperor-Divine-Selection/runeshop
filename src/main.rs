@@ -29,6 +29,19 @@ async fn main() {
     cache.connect();
     cache.wait_for_connect().await.expect("缓存连接失败");
 
+    if let Some(password) = cfg.bootstrap_admin_password.as_deref() {
+        service::backoffice::user::bootstrap::ensure_bootstrap_admin(
+            &db,
+            &cfg.bootstrap_admin_username,
+            &cfg.bootstrap_admin_email,
+            password,
+        )
+        .await
+        .expect("创建引导超管失败");
+    } else {
+        tracing::info!("未配置 BOOTSTRAP_ADMIN_PASSWORD，跳过引导超管创建");
+    }
+
     let state = AppState { db, cache };
     let app = router::app(state);
 

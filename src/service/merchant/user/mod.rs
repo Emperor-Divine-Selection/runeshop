@@ -50,8 +50,6 @@ pub async fn merchant_login<C: ConnectionTrait>(
             save(cache, &token, TokenKind::Merchant, user.id, None).await?;
             Ok(token)
         }
-        MerchantStatus::Pending => Err(ServiceError::Business("商户申请审核中".into())),
         MerchantStatus::Frozen => Err(ServiceError::Business("商户已被冻结".into())),
-        MerchantStatus::Rejected => Err(ServiceError::Business("商户申请已被拒绝".into())),
     }
 }
