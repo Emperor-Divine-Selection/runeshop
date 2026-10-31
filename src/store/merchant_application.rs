@@ -6,8 +6,9 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
 
+use crate::model::backoffice_users::Model as BackofficeUserModel;
 use crate::model::merchant_applications::{ActiveModel, Column, Model};
-use crate::model::prelude::{MerchantApplications, Users};
+use crate::model::prelude::{BackofficeUsers, MerchantApplications, Users};
 use crate::model::sea_orm_active_enums::ApplicationStatus;
 use crate::model::users::Model as UserModel;
 use crate::store::error::StoreError;
@@ -40,9 +41,16 @@ pub async fn list_merchant_applications<C: ConnectionTrait>(
     filter: ApplicationFilter,
     page: u64,
     page_size: u64,
-) -> Result<(Vec<(Model, Option<UserModel>)>, u64), StoreError> {
+) -> Result<
+    (
+        Vec<(Model, Option<UserModel>, Option<BackofficeUserModel>)>,
+        u64,
+    ),
+    StoreError,
+> {
     let mut query = MerchantApplications::find()
         .find_also_related(Users)
+        .find_also_related(BackofficeUsers)
         .order_by_desc(Column::CreateTime)
         .order_by_desc(Column::Id);
 
@@ -96,6 +104,7 @@ pub async fn update_merchant_application_status<C: ConnectionTrait>(
     id: Uuid,
     status: ApplicationStatus,
     reviewed_by: Uuid,
+    review_remark: Option<String>,
 ) -> Result<Model, StoreError> {
     let mut app: ActiveModel = MerchantApplications::find_by_id(id)
         .one(db)
@@ -107,6 +116,7 @@ pub async fn update_merchant_application_status<C: ConnectionTrait>(
     app.reviewed_by = Set(Some(reviewed_by));
     app.reviewed_at = Set(Some(chrono::Utc::now().into()));
     app.update_time = Set(chrono::Utc::now().into());
+    app.review_remark = Set(review_remark);
 
     app.update(db).await.map_err(StoreError::from)
 }

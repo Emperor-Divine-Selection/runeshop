@@ -17,6 +17,8 @@ pub struct Model {
     pub status: ApplicationStatus,
     pub reviewed_by: Option<Uuid>,
     pub reviewed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub review_remark: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

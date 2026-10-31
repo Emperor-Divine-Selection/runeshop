@@ -4,21 +4,30 @@ pub mod reject;
 
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::sqlx::types::Uuid;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::handler::common::status::application_status_text;
+use crate::model::backoffice_users::Model as BackofficeUserModel;
 use crate::model::merchant_applications::Model;
 use crate::model::sea_orm_active_enums::ApplicationStatus;
 use crate::model::users::Model as UsersModel;
 use crate::service::error::ServiceError;
+
+#[derive(Deserialize)]
+pub struct ReviewRequest {
+    #[serde(default)] // 允许 body 里不写这个字段
+    pub remark: Option<String>,
+}
 
 /// 一条申请单的对外形态
 #[derive(Serialize)]
 pub struct ApplicationResponse {
     pub id: Uuid,
     pub shop_name: String,
-    pub status: String,           // "pending" / "approved" / "rejected"
-    pub username: Option<String>, // 申请人，列表才有
+    pub status: String,                // "pending" / "approved" / "rejected"
+    pub username: Option<String>,      // 申请人，列表才有    // 申请人
+    pub reviewer_name: Option<String>, // ← 新增：审核人名字
+    pub review_remark: Option<String>,
     pub create_time: DateTimeWithTimeZone,
     pub reviewed_by: Option<Uuid>,
     pub reviewed_at: Option<DateTimeWithTimeZone>,
@@ -34,14 +43,23 @@ impl From<Model> for ApplicationResponse {
             create_time: application.create_time,
             reviewed_by: application.reviewed_by,
             reviewed_at: application.reviewed_at,
+            review_remark: application.review_remark,
+            reviewer_name: None,
         }
     }
 }
 
-impl From<(Model, Option<UsersModel>)> for ApplicationResponse {
-    fn from((application, user): (Model, Option<UsersModel>)) -> Self {
+impl From<(Model, Option<UsersModel>, Option<BackofficeUserModel>)> for ApplicationResponse {
+    fn from(
+        (application, user, backoffice_user): (
+            Model,
+            Option<UsersModel>,
+            Option<BackofficeUserModel>,
+        ),
+    ) -> Self {
         let mut response = Self::from(application);
         response.username = user.map(|u| u.username);
+        response.reviewer_name = backoffice_user.map(|u| u.username);
         response
     }
 }

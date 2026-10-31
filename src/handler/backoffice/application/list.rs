@@ -7,6 +7,7 @@ use crate::handler::backoffice::application::{ApplicationResponse, parse_status}
 use crate::handler::error::ApiError;
 use crate::handler::extractor::BackofficeUser;
 use crate::handler::response::{ApiResponse, PageResponse};
+
 use crate::service::backoffice::application::{ListApplicationsQuery, list_applications};
 use crate::state::AppState;
 

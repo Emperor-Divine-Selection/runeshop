@@ -1,8 +1,9 @@
 use sea_orm::{ConnectionTrait, DatabaseConnection, TransactionTrait, sqlx::types::Uuid};
 
+use crate::model::backoffice_users::Model as BackofficeUserModel;
 use crate::model::merchant_applications::Model;
 use crate::model::sea_orm_active_enums::ApplicationStatus;
-use crate::model::users;
+use crate::model::users::Model as UsersModel;
 use crate::service::error::ServiceError;
 use crate::store::merchant::{NewMerchant, create_merchant};
 use crate::store::merchant_application::{
@@ -21,7 +22,13 @@ pub struct ListApplicationsQuery {
 pub async fn list_applications<C: ConnectionTrait>(
     db: &C,
     data: ListApplicationsQuery,
-) -> Result<(Vec<(Model, Option<users::Model>)>, u64), ServiceError> {
+) -> Result<
+    (
+        Vec<(Model, Option<UsersModel>, Option<BackofficeUserModel>)>,
+        u64,
+    ),
+    ServiceError,
+> {
     let page = data.page.max(1);
     let page_size = data.page_size.clamp(1, MAX_PAGE_SIZE);
     let status = data.status;
@@ -36,7 +43,9 @@ pub async fn approve_application(
     db: &DatabaseConnection,
     application_id: Uuid,
     reviewer_id: Uuid,
+    review_remark: Option<String>,
 ) -> Result<Model, ServiceError> {
+    let review_remark = normalize_remark(review_remark);
     let txn = db.begin().await?; // ① 开事务
 
     let application = find_merchant_application_by_id(&txn, application_id) // ② 用 txn 查
@@ -53,6 +62,7 @@ pub async fn approve_application(
         application_id,
         ApplicationStatus::Approved,
         reviewer_id,
+        review_remark,
     )
     .await?;
 
@@ -73,7 +83,12 @@ pub async fn reject_application(
     db: &DatabaseConnection,
     application_id: Uuid,
     reviewer_id: Uuid,
+    review_remark: Option<String>,
 ) -> Result<Model, ServiceError> {
+    let Some(review_remark) = normalize_remark(review_remark) else {
+        return Err(ServiceError::InvalidParams("驳回必须填写理由".into()));
+    };
+
     let txn = db.begin().await?; // ① 开事务
 
     let application = find_merchant_application_by_id(&txn, application_id) // ② 用 txn 查
@@ -90,9 +105,17 @@ pub async fn reject_application(
         application_id,
         ApplicationStatus::Rejected,
         reviewer_id,
+        Some(review_remark),
     )
     .await?;
 
     txn.commit().await?; // ⑥ 提交
     Ok(updated)
+}
+
+/// 审核意见归一化：空串 / 纯空格 → None，其余 trim 后保留
+fn normalize_remark(remark: Option<String>) -> Option<String> {
+    remark
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
