@@ -4,7 +4,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20261031_000000_add_review_remark_to_merchant_applications"
+        "m20261031_110304_add_review_remark_to_merchant_applications"
     }
 }
 
