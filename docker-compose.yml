@@ -29,6 +29,19 @@ services:
       timeout: 3s
       retries: 5
 
+  garage:
+    image: dxflrs/garage:v2.5.0
+    container_name: runeshop-garage
+    ports:
+      - "3900:3900"   # S3 API（后端连这个）
+      - "3902:3902"   # 静态网站 / 公开读图片
+      - "3903:3903"   # 管理 API
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garagedata:/var/lib/garage
+    restart: unless-stopped
+
 volumes:
   pgdata:
   valkeydata:
+  garagedata:

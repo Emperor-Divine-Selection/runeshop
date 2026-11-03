@@ -1,0 +1,35 @@
+# Garage 本地开发配置（单节点）
+# 官方文档：https://garagehq.deuxfleurs.fr/documentation/
+#
+# ⚠️ 这个文件里的 secret 只能用于本地开发，上线必须换
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+
+# 单节点不需要共识数据库，用 sqlite 最省事
+db_engine = "sqlite"
+
+# 单机存储，副本数只能是 1
+replication_factor = 1
+
+# 集群内部通信（只有一台机器，用不上，但必须配）
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+rpc_secret = "f48248d863255abcdaf3e45fcb73ee3347b9b299740c0b76384a5c2516b3fcca"
+
+[s3_api]
+# 后端 SDK 连这个地址
+api_bind_addr = "[::]:3900"
+# 区域名随便是啥，但 SDK 里要和这里一致
+s3_region = "garage"
+root_domain = ".s3.garage.localhost"
+
+# 静态网站托管（图片公开访问靠它，见 README 那三条命令）
+[s3_web]
+bind_addr = "[::]:3902"
+root_domain = ".web.garage.localhost"
+index = "index.html"
+
+[admin]
+api_bind_addr = "[::]:3903"
+admin_token = "d87414c4ed9c813c94d1e50934b07698"
