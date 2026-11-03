@@ -2,6 +2,7 @@ use crate::state::AppState;
 use axum::Router;
 use axum::routing::{get, post};
 
+use crate::handler::customer::application::get::get_application_handler;
 use crate::handler::customer::user::login::login_handler;
 use crate::handler::customer::user::me::me_handler;
 use crate::handler::customer::user::register::register_handler;
@@ -12,4 +13,5 @@ pub fn routes() -> Router<AppState> {
         .route("/customer/register", post(register_handler))
         .route("/customer/auth/login", post(login_handler))
         .route("/customer/me", get(me_handler))
+        .route("/customer/application", get(get_application_handler))
 }
