@@ -5,6 +5,7 @@ mod model;
 mod router;
 mod service;
 mod state;
+mod storage;
 mod store;
 
 use config::Config;
@@ -42,7 +43,13 @@ async fn main() {
         tracing::info!("未配置 BOOTSTRAP_ADMIN_PASSWORD，跳过引导超管创建");
     }
 
-    let state = AppState { db, cache };
+    let storage = storage::object::build_store(&cfg).expect("对象存储初始化失败");
+
+    let state = AppState {
+        db,
+        cache,
+        storage,
+    };
     let app = router::app(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")

@@ -24,11 +24,14 @@ api_bind_addr = "[::]:3900"
 s3_region = "garage"
 root_domain = ".s3.garage.localhost"
 
-# 静态网站托管（图片公开访问靠它，见 README 那三条命令）
+# 静态网站托管（图片公开访问靠它）
+# ⚠️ 不配 root_domain = 路径式：http://host:3902/<bucket>/<key>
+#    配了 root_domain = 子域名式：http://<bucket>.<root_domain>:3902/<key>
+# 前端要的是路径式，所以这里故意留空
 [s3_web]
 bind_addr = "[::]:3902"
-root_domain = ".web.garage.localhost"
 index = "index.html"
+root_domain = ".localhost"
 
 [admin]
 api_bind_addr = "[::]:3903"
