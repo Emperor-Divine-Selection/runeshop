@@ -36,7 +36,7 @@ pub async fn update_avatar_handler(
 
         file_bytes = Some(field.bytes().await.map_err(multipart_error)?);
         break;
-    }；
+    }
 
     let Some(bytes) = file_bytes else {
         return Err(ApiError::Service(ServiceError::InvalidParams(
