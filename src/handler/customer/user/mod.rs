@@ -1,3 +1,4 @@
+pub mod avatar;
 pub mod login;
 pub mod me;
 pub mod register;
@@ -18,15 +19,20 @@ pub struct UserResponse {
     pub create_time: DateTimeWithTimeZone,
 }
 
-impl From<Model> for UserResponse {
-    fn from(value: Model) -> Self {
+impl UserResponse {
+    /// `avatar` 在库里存的是对象 key，对外要拼成完整 URL
+    ///
+    /// 拼 URL 的规则只存在于两处：这里和 `handler/customer/user/avatar.rs`
+    pub fn from_model(model: Model, storage_public_url: &str) -> Self {
         Self {
-            id: value.id,
-            username: value.username,
-            email: value.email,
-            avatar: value.avatar,
-            bio: value.bio,
-            create_time: value.create_time,
+            id: model.id,
+            username: model.username,
+            email: model.email,
+            avatar: model
+                .avatar
+                .map(|key| format!("{storage_public_url}/{key}")),
+            bio: model.bio,
+            create_time: model.create_time,
         }
     }
 }

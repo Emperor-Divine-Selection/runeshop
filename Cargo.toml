@@ -14,6 +14,7 @@ chrono = "0.4.45"
 dotenvy = "0.15.7"
 fred = "10.1.0"
 hex = "0.4.3"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 object_store = { version = "0.14.2", features = ["aws"] }
 rand = "0.10.3"
 regex = "1.13.1"

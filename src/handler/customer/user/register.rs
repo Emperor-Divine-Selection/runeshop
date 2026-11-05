@@ -37,6 +37,6 @@ pub async fn register_handler(
     .await?;
     Ok(Json(ApiResponse::ok(
         StatusCode::CREATED.as_u16(),
-        model.into(),
+        UserResponse::from_model(model, &state.storage_public_url),
     )))
 }

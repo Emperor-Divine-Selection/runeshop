@@ -1,8 +1,11 @@
 use fred::error::Error;
+use image::ImageError;
+use object_store::Error as ObjectStoreError;
 use sea_orm::DbErr;
 use std::fmt;
 
 use crate::cache::error::CacheError;
+use crate::storage::error::StorageError;
 use crate::store::error::StoreError;
 
 /// 业务错误类型
@@ -16,6 +19,8 @@ pub enum ServiceError {
     Forbidden(String),
     Database(DbErr),
     Cache(Error),
+    Storage(ObjectStoreError),
+    Image(ImageError),
 }
 
 impl From<StoreError> for ServiceError {
@@ -35,9 +40,25 @@ impl From<CacheError> for ServiceError {
     }
 }
 
+impl From<ImageError> for ServiceError {
+    fn from(error: ImageError) -> Self {
+        // 保留原始错误：具体细节留给日志（handler 里 tracing::warn），
+        // 回给用户的是固定文案，不暴露解析器内部信息
+        Self::Image(error)
+    }
+}
+
 impl From<DbErr> for ServiceError {
     fn from(value: DbErr) -> Self {
         Self::Database(value)
+    }
+}
+
+impl From<StorageError> for ServiceError {
+    fn from(value: StorageError) -> Self {
+        match value {
+            StorageError::Technical(e) => Self::Storage(e),
+        }
     }
 }
 
@@ -52,6 +73,8 @@ impl fmt::Display for ServiceError {
             Self::Forbidden(msg) => write!(f, "[Forbidden] {msg}"),
             Self::Database(e) => write!(f, "[Technical] {}", e),
             Self::Cache(e) => write!(f, "[Technical] {}", e),
+            Self::Storage(e) => write!(f, "[Technical] {}", e),
+            Self::Image(e) => write!(f, "[Image] {}", e),
         }
     }
 }

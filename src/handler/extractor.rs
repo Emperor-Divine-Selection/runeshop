@@ -104,7 +104,7 @@ fn cookie_token(headers: &HeaderMap) -> Option<&str> {
 pub fn bearer_token(headers: &HeaderMap) -> Result<&str, ApiError> {
     let Some(header) = headers.get(AUTHORIZATION) else {
         return Err(ApiError::Service(Unauthorized(
-            "缺少 Authorization 头".into(),
+            "缺少登录凭证（Cookie 或 Authorization 头）".into(),
         )));
     };
 

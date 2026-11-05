@@ -30,6 +30,17 @@ impl IntoResponse for ApiError {
             Self::Service(ServiceError::Cache(e)) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }
+            Self::Service(ServiceError::Storage(e)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+            Self::Service(ServiceError::Image(e)) => {
+                // 细节进日志，响应只给一句人话 —— ImageError 的文案是英文技术细节
+                tracing::warn!(%e, "图片处理失败");
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "图片格式不支持或文件已损坏".to_string(),
+                )
+            }
         };
         ApiResponse::err(status.as_u16(), message).into_response()
     }

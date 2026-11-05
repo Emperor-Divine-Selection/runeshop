@@ -17,6 +17,6 @@ pub async fn me_handler(
     let user = profile(&state.db, &user_id).await?;
     Ok(Json(ApiResponse::ok(
         StatusCode::OK.as_u16(),
-        UserResponse::from(user), // 也可以写 user.into()，同一个 From
+        UserResponse::from_model(user, &state.storage_public_url),
     )))
 }

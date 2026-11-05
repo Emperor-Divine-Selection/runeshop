@@ -40,6 +40,22 @@ pub async fn create_user<C: ConnectionTrait>(db: &C, data: NewUser) -> Result<Mo
     .await?)
 }
 
+/// 更新用户头像
+pub async fn update_user_avatar<C: ConnectionTrait>(
+    db: &C,
+    user_id: &Uuid,
+    avatar: &str,
+) -> Result<Model, StoreError> {
+    let Some(user) = find_by_id(db, user_id).await? else {
+        return Err(StoreError::NotFound("用户不存在".into()));
+    };
+
+    let mut active: ActiveModel = user.into();
+    active.avatar = Set(Some(avatar.to_string()));
+
+    Ok(active.update(db).await?)
+}
+
 /// 按用户名查用户，查不到返回 Ok(None)
 pub async fn find_by_username<C: ConnectionTrait>(
     db: &C,

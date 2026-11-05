@@ -18,7 +18,16 @@ use state::AppState;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    // 不配 RUST_LOG 时默认只放 ERROR，等于日志全关（连 TraceLayer 的请求日志都没有）。
+    // 这里给一个默认值：只开本项目 + tower-http，顺带把 sqlx 打印每条 SQL 的噪音挡掉。
+    // 需要看 SQL 时：RUST_LOG=sqlx=debug cargo run
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("runeshop=info,tower_http=info")
+            }),
+        )
+        .init();
 
     let cfg = Config::new();
     let db = Database::connect(&cfg.postgres_url)
@@ -49,6 +58,7 @@ async fn main() {
         db,
         cache,
         storage,
+        storage_public_url: cfg.storage_public_url.clone(),
     };
     let app = router::app(state);
 
