@@ -3,4 +3,9 @@
 pub use super::backoffice_users::Entity as BackofficeUsers;
 pub use super::merchant_applications::Entity as MerchantApplications;
 pub use super::merchants::Entity as Merchants;
+pub use super::product_inventory::Entity as ProductInventory;
+pub use super::product_items::Entity as ProductItems;
+pub use super::product_kinds::Entity as ProductKinds;
+pub use super::product_prices::Entity as ProductPrices;
+pub use super::products::Entity as Products;
 pub use super::users::Entity as Users;

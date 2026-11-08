@@ -20,3 +20,11 @@ pub enum MerchantStatus {
     #[sea_orm(string_value = "frozen")]
     Frozen,
 }
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "product_status")]
+pub enum ProductStatus {
+    #[sea_orm(string_value = "on_sale")]
+    OnSale,
+    #[sea_orm(string_value = "off_shelf")]
+    OffShelf,
+}

@@ -31,16 +31,6 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(pk_uuid("id").default(Expr::cust("gen_random_uuid()")))
                     .col(uuid("merchant_id").not_null())
-                    .col(string("name").not_null())
-                    // 描述可能很长，用 text 而不是 varchar
-                    .col(text("description").null())
-                    // 只存对象 key，不存完整 URL（和 users.avatar 一致）
-                    .col(string("cover_image").null())
-                    .col(
-                        enumeration("status", "product_status", ["on_sale", "off_shelf"])
-                            .default("on_sale")
-                            .not_null(),
-                    )
                     .col(
                         timestamp_with_time_zone("create_time")
                             .default(Expr::current_timestamp())
@@ -49,6 +39,16 @@ impl MigrationTrait for Migration {
                     .col(
                         timestamp_with_time_zone("update_time")
                             .default(Expr::current_timestamp())
+                            .not_null(),
+                    )
+                    .col(string("name").not_null())
+                    // 描述可能很长，用 text 而不是 varchar
+                    .col(text("description").null())
+                    // 只存对象 key，不存完整 URL（和 users.avatar 一致）
+                    .col(string("cover_image").null())
+                    .col(
+                        enumeration("status", "product_status", ["on_sale", "off_shelf"])
+                            .default("on_sale")
                             .not_null(),
                     )
                     // 商品属于店铺，不属于人：商户被删，商品跟着走

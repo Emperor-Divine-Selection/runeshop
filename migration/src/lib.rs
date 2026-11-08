@@ -9,6 +9,10 @@ mod m20261025_050000_normalize_user_identifiers;
 mod m20261025_050001_add_uuid_defaults;
 mod m20261031_110304_add_review_remark_to_merchant_applications;
 mod m20261106_160716_create_table_products;
+mod m20261108_030810_create_table_product_kinds;
+mod m20261108_034028_create_table_product_items;
+mod m20261108_041855_create_table_product_inventory;
+mod m20261108_114424_create_table_product_prices;
 
 pub struct Migrator;
 
@@ -25,6 +29,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20261025_050001_add_uuid_defaults::Migration),
             Box::new(m20261031_110304_add_review_remark_to_merchant_applications::Migration),
             Box::new(m20261106_160716_create_table_products::Migration),
+            Box::new(m20261108_030810_create_table_product_kinds::Migration),
+            Box::new(m20261108_034028_create_table_product_items::Migration),
+            Box::new(m20261108_041855_create_table_product_inventory::Migration),
+            Box::new(m20261108_114424_create_table_product_prices::Migration),
         ]
     }
 }
