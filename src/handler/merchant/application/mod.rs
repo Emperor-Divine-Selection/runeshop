@@ -1,7 +1,7 @@
 pub mod apply;
 
 use sea_orm::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::handler::common::status::application_status_text;
 use crate::model::merchant_applications::Model;
@@ -23,4 +23,9 @@ impl From<Model> for MerchantApplicationResponse {
             create_time: value.create_time,
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct ApplyRequest {
+    pub shop_name: String,
 }
