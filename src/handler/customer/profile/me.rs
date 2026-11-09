@@ -3,10 +3,10 @@ use axum::{Json, extract::State, http::StatusCode};
 use crate::handler::error::ApiError;
 use crate::handler::extractor::CustomerUser;
 use crate::handler::response::ApiResponse;
-use crate::service::customer::user::profile;
+use crate::service::customer::profile::profile;
 use crate::state::AppState;
 
-use super::UserResponse;
+use crate::handler::customer::UserResponse;
 
 /// GET /customer/me —— 取当前登录用户
 /// 提取器 CustomerUser 失败（没带 token / token 失效 / 不是顾客端）→ 自动 401

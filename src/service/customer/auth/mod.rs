@@ -1,24 +1,14 @@
 use regex::Regex;
-use sea_orm::{ConnectionTrait, sqlx::types::Uuid};
+use sea_orm::ConnectionTrait;
 use std::sync::LazyLock;
 
 use crate::{
     cache::token::{generate, save, TokenKind},
     model::users::Model,
-    store::user::{
-        NewUser, create_user, find_by_email, find_by_id, find_by_username, verify_password,
-    },
+    store::user::{NewUser, create_user, find_by_email, find_by_username, verify_password},
 };
 
 use crate::service::error::ServiceError;
-
-/// 取指定用户资料；查不到返 `NotFound`
-pub async fn profile<C: ConnectionTrait>(db: &C, user_id: &Uuid) -> Result<Model, ServiceError> {
-    let Some(user) = find_by_id(db, user_id).await? else {
-        return Err(ServiceError::NotFound("用户不存在".into()));
-    };
-    Ok(user)
-}
 
 /// 用户登陆
 pub async fn login<C: ConnectionTrait>(

@@ -40,7 +40,7 @@ async fn main() {
     cache.wait_for_connect().await.expect("缓存连接失败");
 
     if let Some(password) = cfg.bootstrap_admin_password.as_deref() {
-        service::backoffice::user::bootstrap::ensure_bootstrap_admin(
+        service::backoffice::auth::bootstrap::ensure_bootstrap_admin(
             &db,
             &cfg.bootstrap_admin_username,
             &cfg.bootstrap_admin_email,

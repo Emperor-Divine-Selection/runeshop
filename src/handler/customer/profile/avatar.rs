@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::handler::error::ApiError;
 use crate::handler::extractor::CustomerUser;
 use crate::handler::response::ApiResponse;
-use crate::service::common::user::avatar::update_avatar;
+use crate::service::customer::profile::avatar::update_avatar;
 use crate::service::error::ServiceError;
 use crate::state::AppState;
 

@@ -1,3 +1,28 @@
-pub mod application;
+pub mod auth;
 pub mod product;
-pub mod user;
+pub mod profile;
+
+use sea_orm::prelude::*;
+use serde::Serialize;
+
+use crate::handler::common::status::merchant_status_text;
+use crate::model::merchants::Model;
+
+#[derive(Serialize)]
+pub struct MerchantResponse {
+    pub id: Uuid,
+    pub shop_name: String,
+    pub status: String,
+    pub create_time: DateTimeWithTimeZone,
+}
+
+impl From<Model> for MerchantResponse {
+    fn from(value: Model) -> Self {
+        Self {
+            id: value.id,
+            shop_name: value.shop_name,
+            status: merchant_status_text(&value.status).to_string(),
+            create_time: value.create_time,
+        }
+    }
+}

@@ -1,8 +1,8 @@
 use axum::{Json, extract::State, http::StatusCode};
 use serde::Deserialize;
 
-use crate::handler::customer::user::UserResponse;
-use crate::service::customer::user::register;
+use crate::handler::customer::UserResponse;
+use crate::service::customer::auth::register;
 use crate::state::AppState;
 use crate::store::user::NewUser;
 

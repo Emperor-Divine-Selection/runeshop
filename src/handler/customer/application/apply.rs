@@ -4,9 +4,9 @@ use super::ApplyRequest;
 
 use crate::handler::error::ApiError;
 use crate::handler::extractor::CustomerUser;
-use crate::handler::merchant::application::MerchantApplicationResponse;
+use crate::handler::customer::application::MerchantApplicationResponse;
 use crate::handler::response::ApiResponse;
-use crate::service::merchant::application::apply_merchant;
+use crate::service::customer::application::apply_merchant;
 use crate::state::AppState;
 
 /// POST /merchant/apply —— 顾客提交商户申请

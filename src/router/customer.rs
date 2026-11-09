@@ -4,10 +4,10 @@ use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 
 use crate::handler::customer::application::get::get_application_handler;
-use crate::handler::customer::user::avatar::update_avatar_handler;
-use crate::handler::customer::user::login::login_handler;
-use crate::handler::customer::user::me::me_handler;
-use crate::handler::customer::user::register::register_handler;
+use crate::handler::customer::profile::avatar::update_avatar_handler;
+use crate::handler::customer::auth::login::login_handler;
+use crate::handler::customer::profile::me::me_handler;
+use crate::handler::customer::auth::register::register_handler;
 
 /// 头像请求体上限
 ///

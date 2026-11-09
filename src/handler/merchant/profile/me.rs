@@ -4,7 +4,7 @@ use crate::handler::error::ApiError;
 use crate::handler::extractor::MerchantUser;
 use crate::handler::response::ApiResponse;
 
-use super::MerchantResponse;
+use crate::handler::merchant::MerchantResponse;
 
 pub async fn me_handler(
     MerchantUser { merchant }: MerchantUser,

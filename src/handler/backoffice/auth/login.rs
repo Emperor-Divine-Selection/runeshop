@@ -1,9 +1,8 @@
-use axum::http::HeaderMap;
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::handler::response::{ApiResponse, token_cookie};
-use crate::service::customer::user::login;
+use crate::handler::response::ApiResponse;
+use crate::service::backoffice::auth::backoffice_login;
 use crate::state::AppState;
 
 use crate::handler::error::ApiError;
@@ -26,14 +25,10 @@ pub struct LoginResponse {
 pub async fn login_handler(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
-) -> Result<(HeaderMap, Json<ApiResponse<LoginResponse>>), ApiError> {
-    let token = login(&state.db, &state.cache, &req.username, &req.password).await?;
-
-    Ok((
-        token_cookie(&token), // ← 新增
-        Json(ApiResponse::ok(
-            StatusCode::OK.as_u16(),
-            LoginResponse { token },
-        )),
-    ))
+) -> Result<Json<ApiResponse<LoginResponse>>, ApiError> {
+    let token = backoffice_login(&state.db, &state.cache, &req.username, &req.password).await?;
+    Ok(Json(ApiResponse::ok(
+        StatusCode::OK.as_u16(),
+        LoginResponse { token },
+    )))
 }

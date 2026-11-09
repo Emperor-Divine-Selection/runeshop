@@ -1,7 +1,8 @@
+pub mod apply;
 pub mod get;
 
 use sea_orm::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::handler::common::status::application_status_text;
 use crate::model::merchant_applications::Model;
@@ -28,4 +29,28 @@ impl From<Model> for CustomerApplicationResponse {
             review_remark: value.review_remark,
         }
     }
+}
+
+#[derive(Serialize)]
+pub struct MerchantApplicationResponse {
+    pub id: Uuid,
+    pub shop_name: String,
+    pub status: String,
+    pub create_time: DateTimeWithTimeZone,
+}
+
+impl From<Model> for MerchantApplicationResponse {
+    fn from(value: Model) -> Self {
+        Self {
+            id: value.id,
+            shop_name: value.shop_name,
+            status: application_status_text(&value.status).to_string(),
+            create_time: value.create_time,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ApplyRequest {
+    pub shop_name: String,
 }

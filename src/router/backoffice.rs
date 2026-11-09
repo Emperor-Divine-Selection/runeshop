@@ -2,9 +2,8 @@ use crate::handler::backoffice::application::{
     approve::approve_application_handler, list::list_applications_handler,
     reject::reject_application_handler,
 };
-use crate::handler::backoffice::user::{
-    login::login_handler, me::me_handler, register::register_handler,
-};
+use crate::handler::backoffice::auth::{login::login_handler, register::register_handler};
+use crate::handler::backoffice::profile::me::me_handler;
 use crate::state::AppState;
 use axum::{
     Router,

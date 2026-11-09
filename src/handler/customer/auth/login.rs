@@ -1,8 +1,9 @@
+use axum::http::HeaderMap;
 use axum::{Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::handler::response::ApiResponse;
-use crate::service::merchant::user::merchant_login;
+use crate::handler::response::{ApiResponse, token_cookie};
+use crate::service::customer::auth::login;
 use crate::state::AppState;
 
 use crate::handler::error::ApiError;
@@ -22,13 +23,17 @@ pub struct LoginResponse {
 
 /// POST /auth/login —— 用户名密码换 token
 /// 用户名不存在或密码错误都返 400「用户名或密码错误」
-pub async fn merchant_login_handler(
+pub async fn login_handler(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<ApiResponse<LoginResponse>>, ApiError> {
-    let token = merchant_login(&state.db, &state.cache, &req.username, &req.password).await?;
-    Ok(Json(ApiResponse::ok(
-        StatusCode::OK.as_u16(),
-        LoginResponse { token },
-    )))
+) -> Result<(HeaderMap, Json<ApiResponse<LoginResponse>>), ApiError> {
+    let token = login(&state.db, &state.cache, &req.username, &req.password).await?;
+
+    Ok((
+        token_cookie(&token), // ← 新增
+        Json(ApiResponse::ok(
+            StatusCode::OK.as_u16(),
+            LoginResponse { token },
+        )),
+    ))
 }

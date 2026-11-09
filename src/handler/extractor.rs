@@ -2,10 +2,10 @@ use crate::cache::token::TokenKind;
 use crate::handler::error::ApiError;
 use crate::model::backoffice_users::Model as BackofficeUserModel;
 use crate::model::merchants::Model as MerchantModel;
-use crate::service::backoffice::user::authenticate_backoffice;
+use crate::service::backoffice::auth::authenticate_backoffice;
 use crate::service::common::auth::authenticate;
 use crate::service::error::ServiceError::Unauthorized;
-use crate::service::merchant::user::authenticate_merchant;
+use crate::service::merchant::auth::authenticate_merchant;
 use crate::state::AppState;
 
 use axum::extract::FromRequestParts;

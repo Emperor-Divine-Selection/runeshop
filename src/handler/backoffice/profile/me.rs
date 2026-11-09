@@ -4,7 +4,7 @@ use crate::handler::error::ApiError;
 use crate::handler::extractor::BackofficeUser;
 use crate::handler::response::ApiResponse;
 
-use super::BackofficeUserResponse;
+use crate::handler::backoffice::BackofficeUserResponse;
 
 pub async fn me_handler(
     BackofficeUser { user }: BackofficeUser,
