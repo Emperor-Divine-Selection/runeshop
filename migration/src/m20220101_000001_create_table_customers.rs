@@ -6,10 +6,11 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // 表名按「人是谁」命名：customers（顾客）/ merchants（商户）/ operators（运营）
         manager
             .create_table(
                 Table::create()
-                    .table("users")
+                    .table(("identity", "customers"))
                     .if_not_exists()
                     .col(pk_uuid("id"))
                     .col(
@@ -34,7 +35,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table("users").to_owned())
+            .drop_table(Table::drop().table(("identity", "customers")).to_owned())
             .await
     }
 }

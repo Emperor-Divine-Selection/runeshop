@@ -18,7 +18,7 @@ impl MigrationTrait for Migration {
         manager
             .create_type(
                 Type::create()
-                    .as_enum("product_status")
+                    .as_enum(("catalog", "product_status"))
                     .values(["on_sale", "off_shelf"])
                     .to_owned(),
             )
@@ -27,7 +27,7 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table("products")
+                    .table(("catalog", "products"))
                     .if_not_exists()
                     .col(pk_uuid("id").default(Expr::cust("gen_random_uuid()")))
                     .col(uuid("merchant_id").not_null())
@@ -47,19 +47,14 @@ impl MigrationTrait for Migration {
                     // 只存对象 key，不存完整 URL（和 users.avatar 一致）
                     .col(string("cover_image").null())
                     .col(
-                        enumeration("status", "product_status", ["on_sale", "off_shelf"])
+                        ColumnDef::new(Alias::new("status"))
+                            .custom("catalog.product_status")
                             .default("on_sale")
-                            .not_null(),
+                            .not_null()
+                            .take(),
                     )
-                    // 商品属于店铺，不属于人：商户被删，商品跟着走
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk_products_merchant_id")
-                            .from("products", "merchant_id")
-                            .to("merchants", "id")
-                            .on_delete(ForeignKeyAction::Cascade)
-                            .on_update(ForeignKeyAction::Cascade),
-                    )
+                    // 商品属于店铺，不属于人
+                    // ⚠️ 跨 schema：merchant_id 只留 UUID，不建外键 —— 见文件末尾说明
                     .to_owned(),
             )
             .await?;
@@ -69,7 +64,7 @@ impl MigrationTrait for Migration {
             .create_index(
                 Index::create()
                     .name("idx_products_merchant_id")
-                    .table("products")
+                    .table(("catalog", "products"))
                     .col("merchant_id")
                     .to_owned(),
             )
@@ -80,7 +75,7 @@ impl MigrationTrait for Migration {
             .create_index(
                 Index::create()
                     .name("uk_products_merchant_id_name")
-                    .table("products")
+                    .table(("catalog", "products"))
                     .col("merchant_id")
                     .col("name")
                     .unique()
@@ -92,10 +87,10 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         // 顺序不能反：先删表（索引随表走），再删类型
         manager
-            .drop_table(Table::drop().table("products").to_owned())
+            .drop_table(Table::drop().table(("catalog", "products")).to_owned())
             .await?;
         manager
-            .drop_type(Type::drop().name("product_status").to_owned())
+            .drop_type(Type::drop().name(("catalog", "product_status")).to_owned())
             .await
     }
 }

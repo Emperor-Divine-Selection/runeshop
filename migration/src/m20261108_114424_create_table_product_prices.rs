@@ -14,7 +14,7 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table("product_prices")
+                    .table(("catalog", "product_prices"))
                     .if_not_exists()
                     .col(pk_uuid("id").default(Expr::cust("gen_random_uuid()")))
                     .col(uuid("item_id").not_null())
@@ -38,8 +38,8 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_product_prices_item_id")
-                            .from("product_prices", "item_id")
-                            .to("product_items", "id")
+                            .from(("catalog", "product_prices"), "item_id")
+                            .to(("catalog", "product_items"), "id")
                             .on_delete(ForeignKeyAction::Cascade),
                     )
                     .check(Check::named(
@@ -53,7 +53,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table("product_prices").to_owned())
+            .drop_table(Table::drop().table(("catalog", "product_prices")).to_owned())
             .await
     }
 }

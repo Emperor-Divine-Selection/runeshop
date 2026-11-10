@@ -2,7 +2,7 @@ pub mod application;
 pub mod auth;
 pub mod profile;
 
-use crate::model::backoffice_users::Model;
+use crate::model::identity::operators::Model;
 use sea_orm::prelude::*;
 use serde::Serialize;
 

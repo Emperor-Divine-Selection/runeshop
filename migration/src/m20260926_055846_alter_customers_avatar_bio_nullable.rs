@@ -4,7 +4,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20260926_055846_alter_users_avatar_bio_nullable"
+        "m20260926_055846_alter_customers_avatar_bio_nullable"
     }
 }
 
@@ -14,7 +14,7 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table("users")
+                    .table(("identity", "customers"))
                     .modify_column(string("avatar").null())
                     .modify_column(string("bio").null())
                     .to_owned(),
@@ -26,7 +26,7 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table("users")
+                    .table(("identity", "customers"))
                     .modify_column(string("avatar").not_null())
                     .modify_column(string("bio").not_null())
                     .to_owned(),

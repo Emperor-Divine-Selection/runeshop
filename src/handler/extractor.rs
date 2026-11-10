@@ -1,7 +1,7 @@
 use crate::cache::token::TokenKind;
 use crate::handler::error::ApiError;
-use crate::model::backoffice_users::Model as BackofficeUserModel;
-use crate::model::merchants::Model as MerchantModel;
+use crate::model::identity::operators::Model as BackofficeUserModel;
+use crate::model::merchant::merchants::Model as MerchantModel;
 use crate::service::backoffice::auth::authenticate_backoffice;
 use crate::service::common::auth::authenticate;
 use crate::service::error::ServiceError::Unauthorized;
@@ -17,6 +17,26 @@ use sea_orm::sqlx::types::Uuid;
 #[derive(Debug, Clone)]
 pub struct CustomerUser {
     pub user_id: Uuid,
+}
+
+/// 商户申请人：只有一条申请单，还不是商户
+///
+/// 和 `MerchantUser` 分开 —— token 的 kind 不同，能做的事也不同
+#[derive(Debug, Clone)]
+pub struct ApplicantUser {
+    pub application_id: Uuid,
+}
+
+impl FromRequestParts<AppState> for ApplicantUser {
+    type Rejection = ApiError;
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let token = bearer_token(&parts.headers)?;
+        let application_id = authenticate(&state.cache, token, TokenKind::Applicant).await?;
+        Ok(ApplicantUser { application_id })
+    }
 }
 
 impl FromRequestParts<AppState> for CustomerUser {

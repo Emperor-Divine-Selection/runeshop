@@ -2,7 +2,7 @@ pub mod avatar;
 
 use sea_orm::{ConnectionTrait, sqlx::types::Uuid};
 
-use crate::model::users::Model;
+use crate::model::identity::customers::Model;
 use crate::service::error::ServiceError;
 use crate::store::user::find_by_id;
 

@@ -4,7 +4,7 @@ use serde::Deserialize;
 use crate::handler::customer::UserResponse;
 use crate::service::customer::auth::register;
 use crate::state::AppState;
-use crate::store::user::NewUser;
+use crate::store::user::NewCustomer;
 
 use crate::handler::error::ApiError;
 use crate::handler::response::ApiResponse;
@@ -26,7 +26,7 @@ pub async fn register_handler(
 ) -> Result<Json<ApiResponse<UserResponse>>, ApiError> {
     let model = register(
         &state.db,
-        NewUser {
+        NewCustomer {
             username: req.username,
             password: req.password,
             email: req.email,

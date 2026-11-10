@@ -4,7 +4,7 @@ use sea_orm::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::handler::common::status::product_status_text;
-use crate::model::products::Model;
+use crate::model::catalog::products::Model;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateProductRequest {

@@ -4,40 +4,26 @@ use super::sea_orm_active_enums::ProductStatus;
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "products")]
+#[sea_orm(schema_name = "catalog", table_name = "products")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     #[sea_orm(unique_key = "uk_products_merchant_id_name")]
     pub merchant_id: Uuid,
+    pub create_time: DateTimeWithTimeZone,
+    pub update_time: DateTimeWithTimeZone,
     #[sea_orm(unique_key = "uk_products_merchant_id_name")]
     pub name: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
     pub cover_image: Option<String>,
     pub status: ProductStatus,
-    pub create_time: DateTimeWithTimeZone,
-    pub update_time: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::merchants::Entity",
-        from = "Column::MerchantId",
-        to = "super::merchants::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    Merchants,
     #[sea_orm(has_many = "super::product_kinds::Entity")]
     ProductKinds,
-}
-
-impl Related<super::merchants::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Merchants.def()
-    }
 }
 
 impl Related<super::product_kinds::Entity> for Entity {

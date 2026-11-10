@@ -4,12 +4,12 @@ use sea_orm::TransactionSession;
 use sea_orm::TransactionTrait;
 use sea_orm::sqlx::types::{Decimal, Uuid};
 
-use crate::model::product_inventory;
-use crate::model::product_items;
-use crate::model::product_kinds;
-use crate::model::product_prices;
-use crate::model::products;
-use crate::model::products::Model;
+use crate::model::catalog::product_inventory;
+use crate::model::catalog::product_items;
+use crate::model::catalog::product_kinds;
+use crate::model::catalog::product_prices;
+use crate::model::catalog::products;
+use crate::model::catalog::products::Model;
 use crate::store::error::StoreError;
 
 #[derive(Debug)]

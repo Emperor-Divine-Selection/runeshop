@@ -1,4 +1,5 @@
-use crate::model::sea_orm_active_enums::{ApplicationStatus, MerchantStatus, ProductStatus};
+use crate::model::catalog::sea_orm_active_enums::ProductStatus;
+use crate::model::merchant::sea_orm_active_enums::{ApplicationStatus, MerchantStatus};
 
 /// 商户经营状态 → 对外字符串（active / frozen）
 pub fn merchant_status_text(status: &MerchantStatus) -> &'static str {
@@ -8,12 +9,13 @@ pub fn merchant_status_text(status: &MerchantStatus) -> &'static str {
     }
 }
 
-/// 申请单审核状态 → 对外字符串（pending / approved / rejected）
+/// 申请单审核状态 → 对外字符串
 pub fn application_status_text(status: &ApplicationStatus) -> &'static str {
     match status {
         ApplicationStatus::Pending => "pending",
         ApplicationStatus::Approved => "approved",
         ApplicationStatus::Rejected => "rejected",
+        ApplicationStatus::SupplementRequired => "supplement_required",
     }
 }
 

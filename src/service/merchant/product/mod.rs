@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use sea_orm::sqlx::types::Decimal;
 use sea_orm::{ConnectionTrait, TransactionTrait, sqlx::types::Uuid};
 
-use crate::model::products::Model;
+use crate::model::catalog::products::Model;
 use crate::service::error::ServiceError;
 use crate::store::product::read::find_product_by_merchant_and_name;
 use crate::store::product::write::{NewProduct, create_product as store_create_product};

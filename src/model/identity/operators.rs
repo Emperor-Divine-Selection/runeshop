@@ -3,7 +3,7 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "users")]
+#[sea_orm(schema_name = "identity", table_name = "operators")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -14,28 +14,9 @@ pub struct Model {
     pub password_hash: String,
     #[sea_orm(unique)]
     pub email: String,
-    pub avatar: Option<String>,
-    pub bio: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(has_one = "super::merchant_applications::Entity")]
-    MerchantApplications,
-    #[sea_orm(has_one = "super::merchants::Entity")]
-    Merchants,
-}
-
-impl Related<super::merchant_applications::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::MerchantApplications.def()
-    }
-}
-
-impl Related<super::merchants::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Merchants.def()
-    }
-}
+pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

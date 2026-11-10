@@ -17,6 +17,8 @@ pub enum TokenKind {
     Customer,
     Merchant,
     Backoffice,
+    /// 商户申请人（还没通过审核，但需要登录进来补正资料）
+    Applicant,
 }
 
 impl TokenKind {
@@ -25,6 +27,7 @@ impl TokenKind {
             Self::Customer => "customer",
             Self::Merchant => "merchant",
             Self::Backoffice => "backoffice",
+            Self::Applicant => "applicant",
         }
     }
 
@@ -33,6 +36,7 @@ impl TokenKind {
             "customer" => Some(Self::Customer),
             "merchant" => Some(Self::Merchant),
             "backoffice" => Some(Self::Backoffice),
+            "applicant" => Some(Self::Applicant),
             _ => None,
         }
     }

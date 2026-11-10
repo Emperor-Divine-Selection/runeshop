@@ -1,6 +1,6 @@
 use crate::handler::backoffice::application::{
     approve::approve_application_handler, list::list_applications_handler,
-    reject::reject_application_handler,
+    reject::reject_application_handler, supplement::request_supplement_handler,
 };
 use crate::handler::backoffice::auth::{login::login_handler, register::register_handler};
 use crate::handler::backoffice::profile::me::me_handler;
@@ -23,5 +23,9 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/backoffice/applications/{id}/reject",
             post(reject_application_handler),
+        )
+        .route(
+            "/backoffice/applications/{id}/supplement",
+            post(request_supplement_handler),
         )
 }

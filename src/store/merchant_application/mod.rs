@@ -1,20 +1,21 @@
 use sea_orm::ActiveValue::Set;
+use sea_orm::PaginatorTrait;
 use sea_orm::sqlx::types::Uuid;
-use sea_orm::{PaginatorTrait, QueryOrder};
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
+    QueryOrder,
 };
 
-use crate::model::backoffice_users::Model as BackofficeUserModel;
-use crate::model::merchant_applications::{ActiveModel, Column, Model};
-use crate::model::prelude::{BackofficeUsers, MerchantApplications, Users};
-use crate::model::sea_orm_active_enums::ApplicationStatus;
-use crate::model::users::Model as UserModel;
+use crate::model::merchant::merchant_applications::Entity as MerchantApplications;
+use crate::model::merchant::merchant_applications::{ActiveModel, Column, Model};
+use crate::model::merchant::sea_orm_active_enums::ApplicationStatus;
 use crate::store::error::StoreError;
 
+/// 创建申请单的入参；密码已经是哈希值
 pub struct NewMerchantApplication {
-    pub user_id: Uuid,
+    pub username: String,
+    pub password_hash: String,
+    pub email: String,
     pub shop_name: String,
 }
 
@@ -23,7 +24,9 @@ pub async fn create_merchant_application<C: ConnectionTrait>(
     data: NewMerchantApplication,
 ) -> Result<Model, StoreError> {
     Ok(ActiveModel {
-        user_id: Set(data.user_id),
+        username: Set(data.username),
+        password_hash: Set(data.password_hash),
+        email: Set(data.email),
         shop_name: Set(data.shop_name),
         status: Set(ApplicationStatus::Pending),
         ..Default::default()
@@ -36,21 +39,18 @@ pub struct ApplicationFilter {
     pub status: Option<ApplicationStatus>, // None = 全部
     pub keyword: Option<String>,           // 店铺名模糊搜（可选）
 }
+
+/// 分页查申请单；返回 `(rows, total)`
+///
+/// 不再 JOIN customers —— 申请人现在就是申请单自己的一条记录（用户名 + 邮箱），
+/// 审核人名字由 service 层批量补（跨域没有外键，不能 JOIN）
 pub async fn list_merchant_applications<C: ConnectionTrait>(
     db: &C,
     filter: ApplicationFilter,
     page: u64,
     page_size: u64,
-) -> Result<
-    (
-        Vec<(Model, Option<UserModel>, Option<BackofficeUserModel>)>,
-        u64,
-    ),
-    StoreError,
-> {
+) -> Result<(Vec<Model>, u64), StoreError> {
     let mut query = MerchantApplications::find()
-        .find_also_related(Users)
-        .find_also_related(BackofficeUsers)
         .order_by_desc(Column::CreateTime)
         .order_by_desc(Column::Id);
 
@@ -72,12 +72,17 @@ pub async fn list_merchant_applications<C: ConnectionTrait>(
     Ok((rows, total))
 }
 
-pub async fn find_merchant_application_by_user_id<C: ConnectionTrait>(
+/// 按用户名查「最近一条」申请（不限状态）
+///
+/// 登录时要靠它区分：待审 / 待补正 / 已驳回
+pub async fn find_latest_application_by_username<C: ConnectionTrait>(
     db: &C,
-    user_id: Uuid,
+    username: &str,
 ) -> Result<Option<Model>, StoreError> {
     Ok(MerchantApplications::find()
-        .filter(Column::UserId.eq(user_id))
+        .filter(Column::Username.eq(username))
+        .order_by_desc(Column::CreateTime)
+        .order_by_desc(Column::Id)
         .one(db)
         .await?)
 }
@@ -99,6 +104,7 @@ pub async fn find_merchant_application_by_id<C: ConnectionTrait>(
     Ok(MerchantApplications::find_by_id(id).one(db).await?)
 }
 
+/// 写审核结论（通过 / 驳回 / 要求补正都走它）
 pub async fn update_merchant_application_status<C: ConnectionTrait>(
     db: &C,
     id: Uuid,
@@ -117,6 +123,42 @@ pub async fn update_merchant_application_status<C: ConnectionTrait>(
     app.reviewed_at = Set(Some(chrono::Utc::now().into()));
     app.update_time = Set(chrono::Utc::now().into());
     app.review_remark = Set(review_remark);
+
+    app.update(db).await.map_err(StoreError::from)
+}
+
+/// 申请人补正资料（用户名不可改）
+pub struct UpdateApplicationContent {
+    pub shop_name: Option<String>,
+    pub email: Option<String>,
+    pub password_hash: Option<String>,
+}
+
+/// 改资料并把状态推回 pending
+///
+/// `reviewed_*` 故意不清空 —— 那是「被打回过一次」的痕迹
+pub async fn update_application_content<C: ConnectionTrait>(
+    db: &C,
+    id: Uuid,
+    data: UpdateApplicationContent,
+) -> Result<Model, StoreError> {
+    let mut app: ActiveModel = MerchantApplications::find_by_id(id)
+        .one(db)
+        .await?
+        .ok_or_else(|| StoreError::NotFound("商户申请不存在".into()))?
+        .into_active_model();
+
+    if let Some(shop_name) = data.shop_name {
+        app.shop_name = Set(shop_name);
+    }
+    if let Some(email) = data.email {
+        app.email = Set(email);
+    }
+    if let Some(password_hash) = data.password_hash {
+        app.password_hash = Set(password_hash);
+    }
+    app.status = Set(ApplicationStatus::Pending);
+    app.update_time = Set(chrono::Utc::now().into());
 
     app.update(db).await.map_err(StoreError::from)
 }

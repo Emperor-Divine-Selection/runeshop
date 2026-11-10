@@ -1,16 +1,15 @@
 pub mod approve;
 pub mod list;
 pub mod reject;
+pub mod supplement;
 
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::sqlx::types::Uuid;
 use serde::{Deserialize, Serialize};
 
 use crate::handler::common::status::application_status_text;
-use crate::model::backoffice_users::Model as BackofficeUserModel;
-use crate::model::merchant_applications::Model;
-use crate::model::sea_orm_active_enums::ApplicationStatus;
-use crate::model::users::Model as UsersModel;
+use crate::model::merchant::merchant_applications::Model;
+use crate::model::merchant::sea_orm_active_enums::ApplicationStatus;
 use crate::service::error::ServiceError;
 
 #[derive(Deserialize)]
@@ -20,47 +19,43 @@ pub struct ReviewRequest {
 }
 
 /// 一条申请单的对外形态
+///
+/// 申请人信息（username / email）现在直接来自申请单本身 —— 申请不再挂顾客账号
 #[derive(Serialize)]
 pub struct ApplicationResponse {
     pub id: Uuid,
+    pub username: String,
+    pub email: String,
     pub shop_name: String,
-    pub status: String,                // "pending" / "approved" / "rejected"
-    pub username: Option<String>,      // 申请人，列表才有    // 申请人
-    pub reviewer_name: Option<String>, // ← 新增：审核人名字
+    pub status: String,                // pending / approved / rejected / supplement_required
+    pub reviewer_name: Option<String>, // 审核人名字（跨域批量查出来的）
     pub review_remark: Option<String>,
     pub create_time: DateTimeWithTimeZone,
     pub reviewed_by: Option<Uuid>,
     pub reviewed_at: Option<DateTimeWithTimeZone>,
 }
 
-impl From<Model> for ApplicationResponse {
-    fn from(application: Model) -> Self {
+impl ApplicationResponse {
+    pub fn from_model(application: Model, reviewer_name: Option<String>) -> Self {
         Self {
             id: application.id,
+            username: application.username,
+            email: application.email,
             shop_name: application.shop_name,
             status: application_status_text(&application.status).to_string(),
-            username: None, // 单条查询（审核结果）不带申请人
+            reviewer_name,
+            review_remark: application.review_remark,
             create_time: application.create_time,
             reviewed_by: application.reviewed_by,
             reviewed_at: application.reviewed_at,
-            review_remark: application.review_remark,
-            reviewer_name: None,
         }
     }
 }
 
-impl From<(Model, Option<UsersModel>, Option<BackofficeUserModel>)> for ApplicationResponse {
-    fn from(
-        (application, user, backoffice_user): (
-            Model,
-            Option<UsersModel>,
-            Option<BackofficeUserModel>,
-        ),
-    ) -> Self {
-        let mut response = Self::from(application);
-        response.username = user.map(|u| u.username);
-        response.reviewer_name = backoffice_user.map(|u| u.username);
-        response
+impl From<Model> for ApplicationResponse {
+    /// 审核动作的返回值没有审核人名字（就是当前登录的人），不带
+    fn from(application: Model) -> Self {
+        Self::from_model(application, None)
     }
 }
 
@@ -70,6 +65,7 @@ pub fn parse_status(value: &str) -> Result<ApplicationStatus, ServiceError> {
         "pending" => Ok(ApplicationStatus::Pending),
         "approved" => Ok(ApplicationStatus::Approved),
         "rejected" => Ok(ApplicationStatus::Rejected),
+        "supplement_required" => Ok(ApplicationStatus::SupplementRequired),
         other => Err(ServiceError::InvalidParams(format!(
             "未知的申请状态：{other}"
         ))),

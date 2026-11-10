@@ -1,13 +1,12 @@
-pub mod application;
 pub mod auth;
 pub mod profile;
 
 use sea_orm::prelude::*;
 use serde::Serialize;
 
-use crate::model::users::Model;
+use crate::model::identity::customers::Model;
 
-/// 用户出参（脱敏：绝不含 password_hash）
+/// 顾客出参（脱敏：绝不含 password_hash）
 #[derive(Serialize)]
 pub struct UserResponse {
     pub id: Uuid,
@@ -21,7 +20,7 @@ pub struct UserResponse {
 impl UserResponse {
     /// `avatar` 在库里存的是对象 key，对外要拼成完整 URL
     ///
-    /// 拼 URL 的规则只存在于两处：这里和 `handler/customer/user/avatar.rs`
+    /// 拼 URL 的规则只存在于两处：这里和 `handler/customer/profile/avatar.rs`
     pub fn from_model(model: Model, storage_public_url: &str) -> Self {
         Self {
             id: model.id,

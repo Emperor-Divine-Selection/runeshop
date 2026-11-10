@@ -3,15 +3,15 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "product_kinds")]
+#[sea_orm(schema_name = "catalog", table_name = "product_kinds")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    #[sea_orm(unique_key = "idx_uk_product_kinds_product_id_name")]
+    #[sea_orm(unique_key = "uk_product_kinds_product_id_name")]
     pub product_id: Uuid,
     pub create_time: DateTimeWithTimeZone,
     pub update_time: DateTimeWithTimeZone,
-    #[sea_orm(unique_key = "idx_uk_product_kinds_product_id_name")]
+    #[sea_orm(unique_key = "uk_product_kinds_product_id_name")]
     pub name: String,
     pub sort_order: i32,
 }

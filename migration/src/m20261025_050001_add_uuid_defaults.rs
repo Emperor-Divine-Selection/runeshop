@@ -11,11 +11,16 @@ impl MigrationName for Migration {
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        for table in ["users", "backoffice_users", "merchant_applications"] {
+        // 三张表分属两个 schema，所以逐个列出来而不是用字符串循环
+        for table in [
+            ("identity", "customers"),
+            ("identity", "operators"),
+            ("merchant", "merchant_applications"),
+        ] {
             manager
                 .exec_stmt(
                     Table::alter()
-                        .table(Alias::new(table))
+                        .table(table)
                         .modify_column(
                             ColumnDef::new(Alias::new("id"))
                                 .default(Expr::cust("gen_random_uuid()")),

@@ -3,11 +3,10 @@ use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 
-use crate::handler::customer::application::get::get_application_handler;
-use crate::handler::customer::profile::avatar::update_avatar_handler;
 use crate::handler::customer::auth::login::login_handler;
-use crate::handler::customer::profile::me::me_handler;
 use crate::handler::customer::auth::register::register_handler;
+use crate::handler::customer::profile::avatar::update_avatar_handler;
+use crate::handler::customer::profile::me::me_handler;
 
 /// 头像请求体上限
 ///
@@ -16,13 +15,14 @@ use crate::handler::customer::auth::register::register_handler;
 /// 正好 5MB 的图片会被 HTTP 层直接掐掉，用户看不到 service 那句友好的提示。
 const AVATAR_BODY_LIMIT: usize = 6 * 1024 * 1024;
 
-/// 组装 HTTP 路由；返回已套好中间件的 Router
+/// 组装顾客端路由
+///
+/// ⚠️ `/customer/application` 已删除 —— 开店申请搬到商户端了（`/merchant/apply`）
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/customer/register", post(register_handler))
         .route("/customer/auth/login", post(login_handler))
         .route("/customer/me", get(me_handler))
-        .route("/customer/application", get(get_application_handler))
         .route(
             "/customer/avatar",
             post(update_avatar_handler).layer(DefaultBodyLimit::max(AVATAR_BODY_LIMIT)),

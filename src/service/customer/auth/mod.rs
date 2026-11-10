@@ -4,8 +4,9 @@ use std::sync::LazyLock;
 
 use crate::{
     cache::token::{generate, save, TokenKind},
-    model::users::Model,
-    store::user::{NewUser, create_user, find_by_email, find_by_username, verify_password},
+    model::identity::customers::Model,
+    store::password::verify_password,
+    store::user::{NewCustomer, create_user, find_by_email, find_by_username},
 };
 
 use crate::service::error::ServiceError;
@@ -22,7 +23,7 @@ pub async fn login<C: ConnectionTrait>(
     let Some(user) = find_by_username(db, &username).await? else {
         return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
-    if !verify_password(&user.password_hash, password.trim()).await {
+    if !verify_password(&user.password_hash, password.trim()) {
         return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
 
@@ -35,7 +36,7 @@ pub async fn login<C: ConnectionTrait>(
 /// 入参不合法返 `InvalidParams`(422)，用户名或邮箱已被占用返 `Conflict`(409)
 pub async fn register<C: ConnectionTrait>(
     db: &C,
-    mut data: NewUser,
+    mut data: NewCustomer,
 ) -> Result<Model, ServiceError> {
     // 1. 归一化：去掉首尾空白，后续校验/查重/入库都用这个值
     data.username = data.username.trim().to_lowercase();
@@ -67,7 +68,7 @@ pub async fn register<C: ConnectionTrait>(
 const MIN_PASSWORD_LEN: usize = 8;
 
 /// 校验注册入参；任一不合法返 `InvalidParams`
-fn validate(data: &NewUser) -> Result<(), ServiceError> {
+fn validate(data: &NewCustomer) -> Result<(), ServiceError> {
     if data.username.is_empty() {
         return Err(ServiceError::InvalidParams("用户名不能为空".into()));
     }

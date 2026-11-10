@@ -14,7 +14,7 @@ impl MigrationTrait for Migration {
         manager
             .exec_stmt(
                 Query::update()
-                    .table(Alias::new("users"))
+                    .table(("identity", "customers"))
                     .value(Alias::new("username"), Expr::cust("LOWER(username)"))
                     .value(Alias::new("email"), Expr::cust("LOWER(email)"))
                     .to_owned(),
@@ -24,7 +24,7 @@ impl MigrationTrait for Migration {
         manager
             .exec_stmt(
                 Query::update()
-                    .table(Alias::new("backoffice_users"))
+                    .table(("identity", "operators"))
                     .value(Alias::new("username"), Expr::cust("LOWER(username)"))
                     .value(Alias::new("email"), Expr::cust("LOWER(email)"))
                     .to_owned(),

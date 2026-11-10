@@ -14,7 +14,7 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table("merchant_applications")
+                    .table(("merchant", "merchant_applications"))
                     .add_column(ColumnDef::new("review_remark").text())
                     .to_owned(),
             )
@@ -26,7 +26,7 @@ impl MigrationTrait for Migration {
         manager
             .alter_table(
                 Table::alter()
-                    .table("merchant_applications")
+                    .table(("merchant", "merchant_applications"))
                     .drop_column("review_remark")
                     .to_owned(),
             )

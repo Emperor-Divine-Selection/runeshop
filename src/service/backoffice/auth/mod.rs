@@ -4,12 +4,13 @@ use sea_orm::{ConnectionTrait, sqlx::types::Uuid};
 
 use crate::{
     cache::token::{TokenKind, generate, save},
-    model::backoffice_users::Model,
+    model::identity::operators::Model,
     service::common::validation::validate,
     store::backoffice_user::{
         NewBackofficeUser, create_backoffice_user, find_backoffice_user_by_email,
-        find_backoffice_user_by_id, find_backoffice_user_by_username, verify_password,
+        find_backoffice_user_by_id, find_backoffice_user_by_username,
     },
+    store::password::verify_password,
 };
 
 use crate::service::error::ServiceError;
@@ -67,7 +68,7 @@ pub async fn backoffice_login<C: ConnectionTrait>(
     let Some(user) = find_backoffice_user_by_username(db, &username).await? else {
         return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
-    if !verify_password(&user.password_hash, password.trim()).await {
+    if !verify_password(&user.password_hash, password.trim()) {
         return Err(ServiceError::Unauthorized("用户名或密码错误".into()));
     };
 

@@ -2,7 +2,7 @@ use sea_orm::ConnectionTrait;
 use sea_orm::sqlx::types::Uuid;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-use crate::model::products::{self, Entity};
+use crate::model::catalog::products::{self, Entity};
 use crate::store::error::StoreError;
 
 pub async fn find_product_by_merchant_and_name<C: ConnectionTrait>(

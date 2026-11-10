@@ -48,7 +48,12 @@ pub async fn list_applications_handler(
     )
     .await?;
 
-    let items = rows.into_iter().map(ApplicationResponse::from).collect();
+    let items = rows
+        .into_iter()
+        .map(|(application, reviewer_name)| {
+            ApplicationResponse::from_model(application, reviewer_name)
+        })
+        .collect();
 
     Ok(Json(ApiResponse::ok(
         StatusCode::OK.as_u16(),
