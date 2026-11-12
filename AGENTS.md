@@ -69,14 +69,20 @@
 **为什么 11-12 又改架构**：写代码前把「认证 / 信封 / 一致性边界」三件事一次定死，
 比写完再改便宜一个数量级。这三条恰好是**穿透所有服务**的横向决策，后改会动到每一层。
 
-### 0.3 旧代码没有丢
+### 0.3 旧代码在哪
+
+2026-11-13 起 `master` 已被新骨架 force push 覆盖，`git clone` 拿到的是新代码。
+旧实现（单体、9 张表、`model/store/service/handler` 分层）存档在 **tag `legacy-monolith-20261111`**（`5e6132e`）：
 
 ```bash
-git clone git@github.com:Emperor-Divine-Selection/runeshop    # HEAD = 5e6132e
+git fetch origin tag legacy-monolith-20261111
+git switch --detach legacy-monolith-20261111
 ```
 
-- 旧实现（单体、9 张表、`model/store/service/handler` 分层）全在上面
-- `.env` / `garage.toml` / `docker-compose.yml` 副本另在 `/tmp/runeshop-backup-20261111/`（`/tmp` 会被清，重要就挪走）
+用 tag 而不是分支，是为了让 `git branch -a` 保持干净；真不要了就
+`git push origin --delete legacy-monolith-20261111`。
+
+- `.env` / `garage.toml` / `docker-compose.yml` 的旧副本原在 `/tmp/runeshop-backup-20261111/` —— **已被清**（`/tmp` 不持久）
 
 ### 0.4 五件别做的事
 
