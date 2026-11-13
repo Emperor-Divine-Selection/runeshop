@@ -7,3 +7,17 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
+sea-orm = { version = "2.0.4", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+    "macros",
+    "with-uuid",
+    "with-chrono",
+] }
+# 关掉 default 能甩掉 `cli` → `sea-orm-cli` 整个依赖树（我们故意不用 run_cli，见踩坑 126）。
+# 但注意：sea-orm-migration 自己对 sea-orm 的依赖没关 default，所以 workspace 里
+# `sea-orm feature "default"` 仍然会是开的 —— 那是别人的 manifest，改不了，影响仅限编译时间。
+sea-orm-migration = { version = "2.0.4", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+] }

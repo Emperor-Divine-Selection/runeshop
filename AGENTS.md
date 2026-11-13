@@ -585,7 +585,7 @@ curl -i -b /tmp/ck localhost:8080/auth/me                  # 401 + code:1002
 | tonic | 0.14.9 + prost 0.14.5 |
 | tonic-build | 0.14.9 + `protoc-bin-vendored` 3.3.0（免装 protoc） |
 | tonic-reflection | 0.14.9（配 `grpcurl`） |
-| sea-orm | 2.0.3（`--no-default-features`，见踩坑 23） |
+| sea-orm | 2.0.4（`--no-default-features`，见踩坑 23） |
 | PG | 17 |
 | Valkey | 8（fred 10.1.0，`connect()` 不能 await，见踩坑 69） |
 | tokio | 1.54.1 |
@@ -823,7 +823,8 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 17. **Cargo workspace**：`migration/` 是独立 crate，根 Cargo.toml 需 `[workspace] members = ["migration"]`
 21. **⚠️ sea-orm-cli 生成只做一半**：
     - `generate entity` 会自动加 `mod`，但**不会**在 `src/main.rs` 加 `mod model;`，不补则不参与编译
-    - `migrate generate` 会建文件，但**不会**往 `migration/src/lib.rs` 的 `migrations()` 注册，不注册则 `migrate up` 静默跳过
+    - `migrate generate` 会建文件，并**自动追加 `mod ...;`**（sea-orm-cli 2.0.2 实测；追加在 `lib.rs` **末尾**，不在顶部），
+      但**不会**往 `migrations()` 的 `vec![]` 里加 `Box::new(...)` —— 不补则迁移静默不跑
     - 兜底验证：`\dt` 查 PG + `select * from seaql_migrations`
 
 > 编号有空洞（1-5、10、14-15、18-20、36、67-68 已删）—— 那些是 Docker / Git 的通用常识，和本项目无关。
@@ -832,7 +833,15 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 ### 架构 / 选型
 
 22. **`valkey` crate 是陷阱**：官方库但停在 `0.0.0-alpha5`（2024-12）后再无更新，且是**同步驱动**（要配 `spawn_blocking`）。改用 **`fred` 10.1**（异步、原生支持 Valkey 8、920 万下载）
-23. **`sea-orm` 别用 default features**：默认拖进 sqlite + async-std + stream + time。要 `--no-default-features` 显式挑：`runtime-tokio-rustls` / `sqlx-postgres` / `macros` / `with-chrono` / `with-rust_decimal` / `with-uuid`
+23. **⚠️ `sea-orm` 的 default features 里【没有驱动】**
+    - **版本更正（2.0.4 实测）**：默认 13 个 feature 全是类型映射（`with-chrono` / `with-uuid` / `with-json` / `with-time` / `with-rust_decimal`）
+      + `macros` + `stream` + `sqlite-use-returning-for-3_35`，**`sqlx-*` 和 `runtime-*` 一个都没有**。
+      所以 `cargo add sea-orm` 之后 `Database::connect` 会失败 —— 不是配置错，是根本没编进驱动。
+    - 「默认拖进 sqlite + async-std」是 1.x 的结论，**2.x 已不成立**（同踩坑 89：版本升级要重验老结论）。
+    - **结论仍然成立**：显式写 `--no-default-features --features runtime-tokio-rustls,sqlx-postgres,macros,with-uuid,with-chrono`。
+      但理由变了 —— 不是「甩掉脏东西」，是「default 缺关键件，而且类型映射只挑需要的能省编译」。
+    - 查法（不用背）：`cargo add sea-orm --dry-run` 看默认开什么；docs.rs 的 **Feature flags** 页看全集；
+      `cargo tree -e features -p <crate>` 看实际开了什么。
 24. **sea-orm-cli 编译极慢**：`cargo install` 必须带 `--no-default-features --features sqlx-postgres,runtime-tokio-rustls`，否则编全数据库驱动
 25. **CLI 与库版本要对齐**：sea-orm 2.0.3 + sea-orm-cli 2.0.2 能跑，但报怪错时先 `cargo install sea-orm-cli --version <对齐> --force` 重装
 
@@ -1194,6 +1203,26 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
     - 网络不通时的旁路：`api.github.com` / `objects.githubusercontent.com` 通、`github.com:443` 不通的情况，
       直接用 `github.com/.../releases/download/...` 的地址下资产即可（不需要走 API）
     - 替代方案：compose 文件的权威校验是 `docker compose config`，补全只查 schema，`config` 还会查卷和变量
+
+126. **⚠️ `sea-orm-cli migrate <sub>` 在我们这个 crate 上全部退化成「跑一遍 main」**
+    它只会执行 `cargo run --manifest-path migration-identity/Cargo.toml -- <sub>`（实测 2.0.2）。
+    而 `main.rs` 不解析参数，所以：
+
+    | 命令 | 实际发生 |
+    |---|---|
+    | `migrate status` | 跑 `ensure_database` + `Migrator::up`，**不打印状态** |
+    | `migrate down` | 同样跑 up，**不回滚** |
+    | `migrate fresh` | 同样跑 up，**不删表重建** |
+
+    不报错，也没有输出 —— 极容易误以为「已查看 / 已回滚」。
+    - **根因**：我们没用 `sea_orm_migration::cli::run_cli`（要先 `ensure_database` 再迁移，`run_cli` 管不了前半段）
+    - **口径**：迁移只有一条命令 `cargo run -p migration-identity`；回滚 = `DROP DATABASE`（§20）
+    - `migrate generate` 不受影响（纯文件操作），可以放心用
+
+127. **sea-orm-cli 不是数据库客户端**
+    顶层只有 `generate` / `migrate` 两个子命令，**没有** `db` / `show` / 表结构查看。
+    想看表和数据只能靠 SQL 客户端（本机已装 `psql` 18.6，直接连 `localhost:5432`，不必 `docker compose exec`）。
+    想用 sea-orm 生态看结构，唯一的路是 `generate entity` —— 它从库里反读 schema 生成 Rust 文件。
 
 ---
 
