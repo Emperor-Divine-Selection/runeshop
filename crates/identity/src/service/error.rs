@@ -3,6 +3,8 @@ use common::password::PasswordError;
 use sea_orm::DbErr;
 use thiserror::Error;
 
+use crate::service::credential::session::SessionError;
+use crate::service::credential::token::TokenError;
 use crate::store::error::StoreError;
 
 #[derive(Debug, Error)]
@@ -21,19 +23,33 @@ pub enum ServiceError {
 
     #[error("[Technical] {0}")]
     Password(#[from] PasswordError),
+
+    #[error("[Technical] {0}")]
+    Token(#[from] TokenError),
+
+    #[error("[Technical] {0}")]
+    Cache(#[from] SessionError),
+
+    /// 凭证错误：登录时用户名不存在 **或** 密码不匹配。
+    /// 两条分支必须共用这一个变体，否则等于送给攻击者一个用户枚举接口（踩坑 51）。
+    #[error("[InvalidCredentials] {0}")]
+    InvalidCredentials(String),
 }
 
 impl ServiceError {
     /// 变体 → 业务码（§6）。这是唯一的映射点。
     ///
-    /// 三个技术变体都映射到 `Internal`：对外只需要说「内部错误」，
-    /// 具体是数据库还是缓存，留在日志里（Display 的 `[Technical]` 前缀）。
+    /// 四个技术变体都映射到 `Internal`：对外只需要说「内部错误」，
+    /// 具体是数据库、缓存还是密码子系统，留在日志里（Display 的 `[Technical]` 前缀）。
     pub fn code(&self) -> ApiCode {
         match self {
             Self::Database(_) => ApiCode::Internal,
             Self::InvalidParams(_) => ApiCode::InvalidParams,
             Self::Conflict(_) => ApiCode::Conflict,
             Self::Password(_) => ApiCode::Internal,
+            Self::Token(_) => ApiCode::Internal,
+            Self::Cache(_) => ApiCode::Internal,
+            Self::InvalidCredentials(_) => ApiCode::InvalidCredentials,
         }
     }
 }

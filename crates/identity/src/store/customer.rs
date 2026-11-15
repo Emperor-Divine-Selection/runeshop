@@ -2,7 +2,8 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
-use crate::model::customers::{ActiveModel, Column, Entity, Model};
+use crate::model::customers::{ActiveModel, Column, Model};
+use crate::model::prelude::Customers;
 use crate::store::error::StoreError;
 
 #[derive(Debug)]
@@ -26,14 +27,14 @@ pub async fn create<C: ConnectionTrait>(db: &C, data: NewCustomer) -> Result<Mod
 }
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: Uuid) -> Result<Option<Model>, StoreError> {
-    Ok(Entity::find_by_id(id).one(db).await?)
+    Ok(Customers::find_by_id(id).one(db).await?)
 }
 
 pub async fn find_by_username<C: ConnectionTrait>(
     db: &C,
     username: &str,
 ) -> Result<Option<Model>, StoreError> {
-    Ok(Entity::find()
+    Ok(Customers::find()
         .filter(Column::Username.eq(username))
         .one(db)
         .await?)
@@ -43,7 +44,7 @@ pub async fn find_by_email<C: ConnectionTrait>(
     db: &C,
     email: &str,
 ) -> Result<Option<Model>, StoreError> {
-    Ok(Entity::find()
+    Ok(Customers::find()
         .filter(Column::Email.eq(email))
         .one(db)
         .await?)

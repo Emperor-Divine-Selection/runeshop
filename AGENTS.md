@@ -587,7 +587,7 @@ curl -i -b /tmp/ck localhost:8080/auth/me                  # 401 + code:1002
 | tonic-reflection | 0.14.9（配 `grpcurl`） |
 | sea-orm | 2.0.4（`--no-default-features`，见踩坑 23） |
 | PG | 17 |
-| Valkey | 8（fred 10.1.0，`connect()` 不能 await，见踩坑 69） |
+| Valkey | 8（**redis-rs 1.8**，见踩坑 128；踩坑 69–73 是 fred 时代的历史记录） |
 | tokio | 1.54.1 |
 | 错误 | `thiserror` 2.0.21 |
 | 重试 | `backon` 1.6.0 |
@@ -628,7 +628,7 @@ POSTGRES_URL_MAINTENANCE=postgres://runeshop:runeshop@localhost:5432/runeshop_op
 POSTGRES_URL_IDENTITY=postgres://runeshop:runeshop@localhost:5432/identity_db
 POSTGRES_URL_CATALOG=postgres://runeshop:runeshop@localhost:5432/catalog_db
 POSTGRES_URL_ORDER=postgres://runeshop:runeshop@localhost:5432/order_db
-VALKEY_URL=valkey://localhost:6379
+VALKEY_URL=redis://localhost:6379
 SESSION_TTL_SECONDS=86400
 ```
 
@@ -653,7 +653,7 @@ runeshop/
 │   ├── catalog.proto
 │   └── order.proto
 ├── crates/
-│   ├── common/                # lib：信封、错误、trace_id、password、config
+│   ├── common/                # lib：ApiCode、Role、信封、trace_id、password、config
 │   ├── gateway/               # :8080  唯一说 HTTP 的进程（BFF + 协议翻译）
 │   ├── identity/              # :50051 (:8081 only /healthz)
 │   ├── catalog/               # :50052 (:8082 only /healthz)
@@ -719,6 +719,7 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 | 4 | refresh token | 未讨论 | 现在只有 24h session，无刷新 |
 | 5 | 全站限流 `429` | 留位 | §6 先占号不给语义 |
 | 6 | trace 可视化（OTel + Jaeger） | 本期不做 | §12.1 已把 `trace_id` 传导写好，将来只换 exporter |
+| 7 | **第一刀的 proto 缺「查资料」的 rpc** | 步 5 定 | §7 的 `/auth/me` 要返回 `username` / `email`，但 §8 的 `ValidateSessionResponse` 只有 `valid` / `user_id` / `role`。倾向**加第五个 rpc `GetCustomer(id)`**，让 `ValidateSession` 保持「只回答你是谁」；备选是给 `ValidateSession` 加字段，但那会让一个 rpc 干两件事 |
 
 ---
 
@@ -729,8 +730,10 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 - [x] **0. 骨架**（11-13 按 §0.1 的形态重做）
       虚拟 workspace（`common` / `identity` / `migration-identity`）+ postgres/valkey + `ensure_database` 能建库
       验收：`Checking` 数 = `workspace_members` 数 = 3；`cargo run -p migration-identity` 后 `\l` 出现 `identity_db`
-- [ ] **1. 第一刀：`customers` 八步**（当前，§10）← **下一个动作：写 `m2026..._create_customers.rs` 并注册进 `migrations()`**
-      进度：迁移链路 ✅（`ensure_database` + 空 `Migrator` + `seaql_migrations` 已建）；步 1 建表 ⬜
+- [ ] **1. 第一刀：`customers` 八步**（当前，§10）← **下一个动作：`me` / `logout`**
+      进度：步 1 建表 ✅、步 2 entity ✅、步 3 store ✅、
+            步 4 service 部分 ✅（password / token / session / register / login）、
+            步 4 收尾 ⬜（`me` / `logout`）、步 5–8 ⬜
       验收：§10 第 6 步 `grpcurl` 四连 + 第 8 步 `curl` 四连全过
 - [ ] **2. 把第一刀的同一套实现用到 `merchants` / `operators`**
       验收：三张表都能 register / login / me / logout，`role` 各自正确（踩坑 94）
@@ -832,7 +835,7 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 
 ### 架构 / 选型
 
-22. **`valkey` crate 是陷阱**：官方库但停在 `0.0.0-alpha5`（2024-12）后再无更新，且是**同步驱动**（要配 `spawn_blocking`）。改用 **`fred` 10.1**（异步、原生支持 Valkey 8、920 万下载）
+22. **`valkey` crate 是陷阱**：官方库但停在 `0.0.0-alpha5`（2024-12）后再无更新，且是**同步驱动**（要配 `spawn_blocking`）。改用 **`redis`（redis-rs）1.8**（Valkey 走同样的 RESP 协议；fred 用过一段，11-15 换掉，理由见踩坑 128）
 23. **⚠️ `sea-orm` 的 default features 里【没有驱动】**
     - **版本更正（2.0.4 实测）**：默认 13 个 feature 全是类型映射（`with-chrono` / `with-uuid` / `with-json` / `with-time` / `with-rust_decimal`）
       + `macros` + `stream` + `sqlite-use-returning-for-3_35`，**`sqlx-*` 和 `runtime-*` 一个都没有**。
@@ -914,6 +917,12 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 66. **⚠️ 用户输入绝不能当正则**：`Regex::new(用户输入)` 会因非法语法 panic，那是 DoS 攻击面。`.unwrap()` 只在「模式是手写常量」时安全
 
 ### 缓存 / fred 实战
+
+> ⚠️ **69–73 是 fred 时代的记录**（2026-11-15 已换成 redis-rs，理由见踩坑 128）。
+> 具体结论不再适用，但三条教训通用：① 返回 `JoinHandle` 的函数，`await` 它等的是**任务结束**
+> 而不是「任务开始」；② trait 方法必须 `use` 了 trait 才看得到；③ **返回类型是泛型的函数，
+> 你不用那个返回值时就必须标类型**（`let _: () = ...`），否则编译器把它落成 `!`，
+> 报一个和真实原因毫无关系的错。留着是为了这三条。
 
 69. **⚠️ fred 的 `connect()` 绝对不能 `await`**：`connect()` 返回 `ConnectHandle = JoinHandle<Result<(), Error>>`，fred 源码注释明说它「resolve 于连接**关闭**时」—— await 它会永久挂起。症状是**程序静默卡死**：没有 panic、没有日志、退出码 124，极易误诊。正确用法是**两步**：
     ```rust
@@ -1223,6 +1232,25 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
     顶层只有 `generate` / `migrate` 两个子命令，**没有** `db` / `show` / 表结构查看。
     想看表和数据只能靠 SQL 客户端（本机已装 `psql` 18.6，直接连 `localhost:5432`，不必 `docker compose exec`）。
     想用 sea-orm 生态看结构，唯一的路是 `generate entity` —— 它从库里反读 schema 生成 Rust 文件。
+
+128. **Valkey 客户端：fred → redis-rs（2026-11-15）**
+    换的理由不是 fred 有 bug，是**要记住的东西太多**：`init()` vs `connect()` 的 await 语义、
+    `Expiration::EX` 包一层、`set` 五个参数、每条命令都要标返回类型 —— 五条坑（69–73）
+    只为了三个命令（`SET EX` / `GET` / `DEL`）。
+
+    | | fred 10 | redis-rs 1.8 |
+    |---|---|---|
+    | `SET ... EX` | `set(k, v, Some(Expiration::EX(ttl)), None, false)` | `set_ex(k, v, ttl)` |
+    | 连接 | `init().await`（易挂） | `get_connection_manager().await` |
+    | 命令的 `self` | `&self` | **`&mut self`** → 每条命令前 `conn.clone()` |
+
+    - **代价**：`&mut self` 要 clone 句柄。`ConnectionManager` 的 clone 只是 Arc +1，且自带**自动重连**
+      （Valkey 重启后应用能自己恢复）
+    - **scheme 变了**：redis-rs 只认 `redis://`，所以 `VALKEY_URL` 从 `valkey://` 改成 `redis://`
+      （Valkey 和 Redis 走同一套 RESP 协议，前缀只是解析器的要求）
+    - **依赖写法**：`redis = { version = "1.8", default-features = false, features = ["connection-manager", "tokio-comp"] }`
+      —— 默认 features 带 acl/streams/geospatial/script/bloom，我们只用得上两个
+    - ⚠️ crates.io 上已有 `2.0.0-rc`。`cargo add redis` 会给 1.8.x，**但别手写 `redis = "2"`**
 
 ---
 
