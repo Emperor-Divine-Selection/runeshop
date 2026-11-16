@@ -8,7 +8,7 @@ use crate::service::credential::{session::SessionStore, token::generate_token};
 use crate::service::error::ServiceError;
 use crate::service::normalize::{normalize_email, normalize_username};
 use crate::service::validate::{validate_email, validate_password, validate_username};
-use crate::store::customer::{NewCustomer, create, find_by_email, find_by_username};
+use crate::store::customer::{NewCustomer, create, find_by_email, find_by_id, find_by_username};
 
 #[derive(Debug)]
 pub struct RegisterInput {
@@ -90,4 +90,42 @@ pub async fn login<C: ConnectionTrait>(
     session.save(&token, Role::Customer, &customer.id).await?;
 
     Ok((token, customer))
+}
+
+/// 用 token 换当前用户资料。§7 的 `GET /auth/me`。
+///
+/// 三种失败（没有 session / 端类型不对 / 人已被删）对外**完全一样**：
+/// 都是 1002 跳登录页。区别只进日志。
+pub async fn me<C: ConnectionTrait>(
+    db: &C,
+    session: &SessionStore,
+    token: &str,
+) -> Result<Model, ServiceError> {
+    let not_logged_in = || ServiceError::Unauthorized("未登录或登录已失效".to_owned());
+
+    let Some(ident) = session.load(token).await? else {
+        return Err(not_logged_in());
+    };
+
+    // 第一刀只有顾客。商户/运营的 token 即使格式合法，也不能拿来看顾客资料（踩坑 94）。
+    if ident.role != Role::Customer {
+        tracing::warn!(reason = "wrong_role", "token 的端类型与 customers 不符");
+        return Err(not_logged_in());
+    }
+
+    let Some(customer) = find_by_id(db, ident.user_id).await? else {
+        // session 还在但人没了 —— 数据不一致，不是用户输错
+        tracing::warn!(
+            reason = "session_user_missing",
+            "session 指向的顾客已不存在"
+        );
+        return Err(not_logged_in());
+    };
+
+    Ok(customer)
+}
+
+pub async fn logout(session: &SessionStore, token: &str) -> Result<(), ServiceError> {
+    session.delete(token).await?;
+    Ok(())
 }

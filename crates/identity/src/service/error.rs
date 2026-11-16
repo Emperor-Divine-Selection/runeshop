@@ -34,6 +34,10 @@ pub enum ServiceError {
     /// 两条分支必须共用这一个变体，否则等于送给攻击者一个用户枚举接口（踩坑 51）。
     #[error("[InvalidCredentials] {0}")]
     InvalidCredentials(String),
+
+    /// 没登录 / 登录失效 —— 跳登录页（1002）。
+    #[error("[Unauthorized] {0}")]
+    Unauthorized(String),
 }
 
 impl ServiceError {
@@ -50,6 +54,7 @@ impl ServiceError {
             Self::Token(_) => ApiCode::Internal,
             Self::Cache(_) => ApiCode::Internal,
             Self::InvalidCredentials(_) => ApiCode::InvalidCredentials,
+            Self::Unauthorized(_) => ApiCode::Unauthorized,
         }
     }
 }

@@ -583,7 +583,7 @@ curl -i -b /tmp/ck localhost:8080/auth/me                  # 401 + code:1002
 |---|---|
 | axum | 0.8.9 |
 | tonic | 0.14.9 + prost 0.14.5 |
-| tonic-build | 0.14.9 + `protoc-bin-vendored` 3.3.0（免装 protoc） |
+| tonic-prost-build | 0.14.9（生成 server/client 代码）+ `protoc-bin-vendored` 3.3.0（自带 protoc，免装）。**tonic-build 0.14 只留 Service codegen，prost 部分已拆出**，见踩坑 129 |
 | tonic-reflection | 0.14.9（配 `grpcurl`） |
 | sea-orm | 2.0.4（`--no-default-features`，见踩坑 23） |
 | PG | 17 |
@@ -675,7 +675,7 @@ crates/<service>/
 │   ├── store/              # SQL
 │   ├── service/            # 业务规则
 │   └── grpc/               # proto 生成的 trait 实现
-└── build.rs                # tonic-build（读 ../../proto）
+└── build.rs                # tonic-prost-build（读 ../../proto）
 ```
 
 `client.rs` 只有 gateway 需要（它调别人）。依赖方向单向向下，**不可倒置**：
@@ -1212,6 +1212,10 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
     - 网络不通时的旁路：`api.github.com` / `objects.githubusercontent.com` 通、`github.com:443` 不通的情况，
       直接用 `github.com/.../releases/download/...` 的地址下资产即可（不需要走 API）
     - 替代方案：compose 文件的权威校验是 `docker compose config`，补全只查 schema，`config` 还会查卷和变量
+    - **同一招对 Proto 扩展也有效**（v0.3.4 的 `buf` LSP 同样先 `worktree.which("buf")` 再查 GitHub API）。
+      `buf` 已装到 `~/.local/bin/buf`（v1.75.0，从 `github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64`
+      直下，46MB）。Arch 官方源 `extra/buf` 也有，但那要 sudo。**PATH 上有 buf → 不再触发 403**。
+      ⚠️ 下载大文件容易被中断，用 `curl -L -C -` 续传，并核对 `content-length`（这次断了第一次，29MB / 46MB）
 
 126. **⚠️ `sea-orm-cli migrate <sub>` 在我们这个 crate 上全部退化成「跑一遍 main」**
     它只会执行 `cargo run --manifest-path migration-identity/Cargo.toml -- <sub>`（实测 2.0.2）。
@@ -1251,6 +1255,19 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
     - **依赖写法**：`redis = { version = "1.8", default-features = false, features = ["connection-manager", "tokio-comp"] }`
       —— 默认 features 带 acl/streams/geospatial/script/bloom，我们只用得上两个
     - ⚠️ crates.io 上已有 `2.0.0-rc`。`cargo add redis` 会给 1.8.x，**但别手写 `redis = "2"`**
+
+129. **⚠️ tonic 0.14 把 prost 构建拆成了 `tonic-prost-build`（2026-11-16 实测）**
+    - `tonic_build::configure()` 在 0.14 **不存在**。源码注释写得很直白：
+      `// Prost functionality has been moved to tonic-prost-build`
+    - 依赖写 `tonic-prost-build = "0.14.9"`，build.rs 里用 `tonic_prost_build::configure()`。
+      `tonic-build` 0.14 只保留 Service codegen，不再负责 proto → Rust 生成。
+    - `protoc-bin-vendored` 是**独立依赖**，不是 tonic-build 的 feature（旧文档这里写错过两次）。
+      build.rs 里要先 `unsafe { std::env::set_var("PROTOC", protoc_bin_vendored::protoc_bin_path()?) }`。
+      **unsafe 是 edition 2024 的要求**（`set_var` 在多线程下有 UB），build script 单线程，注释说明即可。
+    - 路径层级：`crates/identity/` → 根目录是**两级**。写 `../proto/...` 会报
+      `Could not make proto path relative`，正确是 `../../proto/identity.proto` + `&["../../proto"]`。
+    - **proto 不需要手动编译**：build.rs 由 cargo 自动跑，`cargo:rerun-if-changed=../../proto/identity.proto`
+      让改动后自动重新生成。生成物在 `target/debug/build/identity-*/out/identity.v1.rs`。
 
 ---
 
