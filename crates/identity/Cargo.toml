@@ -24,3 +24,4 @@ thiserror = { workspace = true }
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.44"
 uuid = { workspace = true }
+tonic-prost = "0.14.9"

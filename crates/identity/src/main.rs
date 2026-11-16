@@ -1,3 +1,4 @@
+mod grpc;
 mod model;
 mod service;
 mod store;

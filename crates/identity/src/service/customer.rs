@@ -92,37 +92,14 @@ pub async fn login<C: ConnectionTrait>(
     Ok((token, customer))
 }
 
-/// 用 token 换当前用户资料。§7 的 `GET /auth/me`。
-///
-/// 三种失败（没有 session / 端类型不对 / 人已被删）对外**完全一样**：
-/// 都是 1002 跳登录页。区别只进日志。
-pub async fn me<C: ConnectionTrait>(
-    db: &C,
-    session: &SessionStore,
-    token: &str,
-) -> Result<Model, ServiceError> {
-    let not_logged_in = || ServiceError::Unauthorized("未登录或登录已失效".to_owned());
-
-    let Some(ident) = session.load(token).await? else {
-        return Err(not_logged_in());
-    };
-
-    // 第一刀只有顾客。商户/运营的 token 即使格式合法，也不能拿来看顾客资料（踩坑 94）。
-    if ident.role != Role::Customer {
-        tracing::warn!(reason = "wrong_role", "token 的端类型与 customers 不符");
-        return Err(not_logged_in());
-    }
-
-    let Some(customer) = find_by_id(db, ident.user_id).await? else {
-        // session 还在但人没了 —— 数据不一致，不是用户输错
-        tracing::warn!(
-            reason = "session_user_missing",
-            "session 指向的顾客已不存在"
-        );
-        return Err(not_logged_in());
-    };
-
-    Ok(customer)
+/// 按 id 取顾客。给 `GetCustomer` RPC 和 `me` 共用。
+/// 取当前用户资料。§7 的 `GET /auth/me` 走的就是它 —— gateway 已经用
+/// `ValidateSession` 拿到 user_id 了，所以这里只认 id，不再解析 token。
+pub async fn me<C: ConnectionTrait>(db: &C, user_id: Uuid) -> Result<Model, ServiceError> {
+    find_by_id(db, user_id).await?.ok_or_else(|| {
+        tracing::warn!(reason = "customer_missing", "用户不存在");
+        ServiceError::Unauthorized("用户不存在".to_owned())
+    })
 }
 
 pub async fn logout(session: &SessionStore, token: &str) -> Result<(), ServiceError> {

@@ -3,6 +3,8 @@ use redis::{AsyncCommands, aio::ConnectionManager};
 use sea_orm::sqlx::types::Uuid;
 use thiserror::Error;
 
+use crate::service::error::ServiceError;
+
 #[derive(Debug, Error)]
 pub enum SessionError {
     #[error("[Technical] {0}")]
@@ -66,4 +68,23 @@ impl SessionStore {
         let _: i64 = connection.del(key).await?;
         Ok(())
     }
+}
+
+/// 验证 token，返回它代表的身份。
+///
+/// 三张账号表（customers / merchants / operators）都在 identity 这一个进程里，
+/// 所以三端共用这一份实现 —— 但它属于 credential，不属于 common：
+/// 放 common 会让 gateway / catalog / order 都被迫依赖 redis 客户端。
+///
+/// 这里不查库：session 是凭证缓存，资料查询是 customer::me 的事（§4.4）。
+pub async fn validate_session(
+    sessions: &SessionStore,
+    token: &str,
+) -> Result<Option<SessionIdentity>, ServiceError> {
+    if token.is_empty() {
+        return Ok(None);
+    }
+
+    // SessionError 已经 #[from] 进 ServiceError::Cache，所以 ? 直接用
+    Ok(sessions.load(token).await?)
 }

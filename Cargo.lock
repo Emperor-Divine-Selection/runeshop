@@ -1339,6 +1339,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tonic-prost",
  "tonic-prost-build",
  "tonic-reflection",
  "tracing",

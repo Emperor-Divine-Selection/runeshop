@@ -582,7 +582,7 @@ curl -i -b /tmp/ck localhost:8080/auth/me                  # 401 + code:1002
 | 项 | 版本 / 决定 |
 |---|---|
 | axum | 0.8.9 |
-| tonic | 0.14.9 + prost 0.14.5 |
+| tonic | 0.14.9 + prost 0.14.5 + `tonic-prost` 0.14.9（codec，生成代码里会用到；见踩坑 129） |
 | tonic-prost-build | 0.14.9（生成 server/client 代码）+ `protoc-bin-vendored` 3.3.0（自带 protoc，免装）。**tonic-build 0.14 只留 Service codegen，prost 部分已拆出**，见踩坑 129 |
 | tonic-reflection | 0.14.9（配 `grpcurl`） |
 | sea-orm | 2.0.4（`--no-default-features`，见踩坑 23） |
@@ -1268,6 +1268,10 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
       `Could not make proto path relative`，正确是 `../../proto/identity.proto` + `&["../../proto"]`。
     - **proto 不需要手动编译**：build.rs 由 cargo 自动跑，`cargo:rerun-if-changed=../../proto/identity.proto`
       让改动后自动重新生成。生成物在 `target/debug/build/identity-*/out/identity.v1.rs`。
+    - **tonic 0.14 的第三个 crate**：生成的代码里用 `tonic_prost::ProstCodec`，所以还要
+      `tonic-prost = "0.14.9"` —— 只有 `tonic` + `prost` + `tonic-prost-build` 仍不够。
+    - **编辑器报 `OUT_DIR not set` 是 rust-analyzer 的局限**：它展开 `env!("OUT_DIR")` 时没有
+      build script 的环境。判据永远是 `cargo check`，不是编辑器的红线。
 
 ---
 
