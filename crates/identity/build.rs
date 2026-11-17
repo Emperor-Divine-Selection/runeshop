@@ -8,7 +8,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("cargo:rerun-if-changed=../../proto/identity.proto");
 
+    // 给 tonic-reflection 用：grpcurl list 靠它发现服务。
+    // 注意 build.rs 里的 OUT_DIR 是【运行时】环境变量（cargo 执行本脚本时才传入），
+    // 不是编译期常量 —— 所以用 std::env::var，不能用 env!（main.rs 里才用 env!）
+    let descriptor_path = format!(
+        "{}/identity_descriptor.bin",
+        std::env::var("OUT_DIR")?
+    );
+
     tonic_prost_build::configure()
+        .file_descriptor_set_path(descriptor_path)
         .build_server(true)
         .build_client(false)
         .compile_protos(&["../../proto/identity.proto"], &["../../proto"])?;
