@@ -15,9 +15,9 @@
 
 ---
 
-## 0. 当前状态（2026-11-13，先读这段）
+## 0. 当前状态（2026-11-18，先读这段）
 
-**架构定稿；骨架已落地并跑通，第一刀的表还没建。**
+**第一刀（`customers`）走到 §10 步 6 已完成：identity 的五个 rpc 全部能用 `grpcurl` 调通；gateway 刚起步。**
 
 2026-11-12 的定稿推翻了 11-11 晚那版骨架的四条口径：
 
@@ -30,11 +30,18 @@
 
 2026-11-13 落地的骨架（§0.1 那张表是历史对照，现状见这里）：
 
-- 虚拟 workspace（根 `Cargo.toml` 无 `[package]`）：`crates/common`、`crates/identity`、`migration-identity`
+- 虚拟 workspace（根 `Cargo.toml` 无 `[package]`）：`crates/common`、`crates/identity`、`crates/gateway`、`migration-identity`
 - `docker-compose.yml`：postgres 17 + valkey 8；**没有 initdb 挂载**，也没有 jaeger / garage
-- `migration-identity` 的二进制已跑通：连 `runeshop_ops` → `CREATE DATABASE identity_db` → `Migrator::up`（迁移列表还是空的，所以只有 `seaql_migrations`）
+- `migration-identity` 的二进制：连 `runeshop_ops` → `CREATE DATABASE identity_db` → 建 `customers`
 
-**第一刀（`customers` 八步，见 §10）卡在第 1 步：`customers` 表还没建。**
+11-14 ~ 11-18 又推进了这些（细节见 §16）：
+
+- **service 层齐了**：argon2 哈希、32 字节 token、Valkey session、register / login / me / logout
+- **proto 契约 5 个 rpc**（§8），tonic server 起在 **50051 + reflection**
+- **`grpcurl` 四连已通**（§10 步 6）：register → login → validate → logout → validate(false)
+- **gateway 刚建 crate**：只有 `/healthz`，还没接 identity
+
+**第一刀卡在 §10 步 7：gateway 的四个路由 + auth middleware。**
 
 ### 0.1 骨架要改的地方
 
@@ -399,6 +406,7 @@ service IdentityService {
   rpc Register(RegisterRequest)               returns (RegisterResponse);
   rpc Login(LoginRequest)                     returns (LoginResponse);
   rpc ValidateSession(ValidateSessionRequest) returns (ValidateSessionResponse);
+  rpc GetCustomer(GetCustomerRequest)         returns (GetCustomerResponse);   // §15 第 7 条
   rpc Logout(LogoutRequest)                   returns (LogoutResponse);
 }
 
@@ -409,7 +417,16 @@ message ValidateSessionResponse {
   string user_id = 2;
   string role    = 3;
 }
+
+// user_id 只能由 gateway 从 session 推导后填充（IDOR 防线，见 §9.1）
+message GetCustomerRequest { string user_id = 1; }
 ```
+
+`GetCustomer` 是 §15 第 7 条补的：`/auth/me` 要 `username` / `email`，而 `ValidateSession`
+只回答「你是谁」。拆成两个 rpc，各自只干一件事。
+
+⚠️ `LoginResponse` 里**没有 `expires_in`** —— §7 的 HTTP 响应有它，但那是 gateway 从
+`SESSION_TTL_SECONDS` 填的，不是 identity 的业务数据。
 
 **proto 铁律：字段号才是身份，字段名不是。**
 
@@ -750,12 +767,12 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 **判据永远是「能在命令行看见」**，不是「代码写完了」。
 
 - [x] **0. 骨架**（11-13 按 §0.1 的形态重做）
-      虚拟 workspace（`common` / `identity` / `migration-identity`）+ postgres/valkey + `ensure_database` 能建库
-      验收：`Checking` 数 = `workspace_members` 数 = 3；`cargo run -p migration-identity` 后 `\l` 出现 `identity_db`
-- [ ] **1. 第一刀：`customers` 八步**（当前，§10）← **下一个动作：`me` / `logout`**
-      进度：步 1 建表 ✅、步 2 entity ✅、步 3 store ✅、
-            步 4 service 部分 ✅（password / token / session / register / login）、
-            步 4 收尾 ⬜（`me` / `logout`）、步 5–8 ⬜
+      虚拟 workspace（`common` / `identity` / `gateway` / `migration-identity`）+ postgres/valkey + `ensure_database` 能建库
+      验收：`Checking` 数 = `workspace_members` 数；`cargo run -p migration-identity` 后 `\l` 出现 `identity_db`
+- [ ] **1. 第一刀：`customers` 八步**（当前，§10）← **下一个动作：步 7 gateway**
+      进度：步 1 建表 ✅、步 2 entity ✅、步 3 store ✅、步 4 service ✅、
+            **步 5 proto + tonic server ✅（50051 + reflection）**、
+            **步 6 `grpcurl` 四连 ✅**、步 7 gateway ⬜、步 8 `curl` 四连 ⬜
       验收：§10 第 6 步 `grpcurl` 四连 + 第 8 步 `curl` 四连全过
 - [ ] **2. 把第一刀的同一套实现用到 `merchants` / `operators`**
       验收：三张表都能 register / login / me / logout，`role` 各自正确（踩坑 94）
