@@ -12,14 +12,14 @@ service IdentityService {
 
 message RegisterRequest {
   string username = 1;
-  string email    = 2;
+  string email = 2;
   string password = 3;
 }
 
 message RegisterResponse {
-  string id       = 1;
+  string id = 1;
   string username = 2;
-  string email    = 3;
+  string email = 3;
 }
 
 message LoginRequest {
@@ -28,9 +28,9 @@ message LoginRequest {
 }
 
 message LoginResponse {
-  string token   = 1;
+  string token = 1;
   string user_id = 2;
-  string role    = 3;
+  string role = 3;
 }
 
 message ValidateSessionRequest {
@@ -38,20 +38,22 @@ message ValidateSessionRequest {
 }
 
 message ValidateSessionResponse {
-  bool   valid   = 1;
+  bool valid = 1;
   string user_id = 2;
-  string role    = 3;
+  string role = 3;
 }
 
+// user_id 只能由 gateway 从 session 推导后填充，绝不允许来自 HTTP 请求参数。
+// 这是 IDOR 防线（AGENTS.md §9）：handler 里只认 CurrentUser.id，不读请求体里的 id。
 message GetCustomerRequest {
   string user_id = 1;
 }
 
 message GetCustomerResponse {
-  string id       = 1;
+  string id = 1;
   string username = 2;
-  string email    = 3;
-  string role     = 4;
+  string email = 3;
+  string role = 4;
 }
 
 message LogoutRequest {

@@ -1,0 +1,14 @@
+version: v2
+
+# proto 是我们唯一的模块。声明出来，编辑器在仓库根跑 `buf lint` 时
+# 才知道该看哪儿（不声明就会把仓库根当模块，用默认规则报一堆无关的错）。
+modules:
+  - path: proto
+
+lint:
+  use:
+    - STANDARD
+  except:
+    # 我们的约定是 proto/identity.proto（AGENTS.md §13），
+    # 不按 buf 的 proto/identity/v1/ 分层 —— 只有一份契约，分层没有收益。
+    - PACKAGE_DIRECTORY_MATCH

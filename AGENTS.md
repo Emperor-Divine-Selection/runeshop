@@ -468,6 +468,28 @@ async fn auth_middleware(
 ⚠️ 上面为了讲清主干省略了信封映射：真实的 `Err` 分支要返 **§5 的壳 + §6 的 code**
 （`1002` / `5000`），而不是裸 `StatusCode`。中间件里还要**补 `trace_id`** 到 extension 和响应头。
 
+### 9.1 IDOR 防线（2026-11-17 补）
+
+`identity.GetCustomer(user_id)` 这类「按 id 查」的 rpc，**identity 不校验 id 是不是本人的**
+（它无条件信任调用方 —— 因为端口不对外，只有 gateway 能连，见 §2）。
+
+所以越权的唯一入口是 gateway。纪律三条：
+
+1. **id 只能来自 token 推导**：middleware 调 `ValidateSession` 拿到 `user_id`，塞进
+   `CurrentUser`；handler 只读 `CurrentUser.id`，**从不读请求体/查询参数里的 id**。
+2. **`/auth/me` 的请求 DTO 里没有 id 字段** —— 客户端连一个能填的地方都没有。
+3. **将来要看别人的资料**（商品页显示卖家），必须是**另一条带授权规则的接口**，
+   不是把 `GetCustomer` 放宽。
+
+反面写法（一旦出现就等于把 `GetCustomer` 变成越权接口）：
+
+```rust
+let id = params.user_id.unwrap_or(current_user.id);   // ❌ 绝不这么写
+```
+
+另：**别拿 UUID v7 当"猜不到"的防线**。v7 前 48 位是毫秒时间戳，泄露注册时间；
+剩下约 74 位随机位虽然枚举不动，但「不可猜测」不是授权手段。
+
 ---
 
 ## 10. 竖切八步（第一刀：只切 `customers`）
