@@ -572,6 +572,8 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "serde",
+ "serde_json",
  "thiserror",
  "tracing",
  "tracing-subscriber",
