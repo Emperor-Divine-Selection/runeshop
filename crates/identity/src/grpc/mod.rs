@@ -20,13 +20,12 @@ pub struct IdentityGrpc {
 /// ServiceError → tonic::Status 的唯一映射点。
 fn to_status(err: impl Into<ServiceError>) -> Status {
     let err = err.into();
+    let public = err.public_message();
     match err.code() {
-        ApiCode::InvalidCredentials | ApiCode::Unauthorized => {
-            Status::unauthenticated(err.to_string())
-        }
-        ApiCode::InvalidParams => Status::invalid_argument(err.to_string()),
-        ApiCode::Conflict => Status::already_exists(err.to_string()),
-        // 内部错误绝不把 err.to_string() 发给客户端 —— 那会泄露 SQL / 表名
+        ApiCode::InvalidCredentials | ApiCode::Unauthorized => Status::unauthenticated(public),
+        ApiCode::InvalidParams => Status::invalid_argument(public),
+        ApiCode::Conflict => Status::already_exists(public),
+        // 内部错误绝不把细节发给客户端 —— 可能含 SQL / 表名
         ApiCode::Internal => Status::internal("internal error"),
         ApiCode::Ok => unreachable!("成功不会被当错误处理"),
     }

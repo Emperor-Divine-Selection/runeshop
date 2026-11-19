@@ -57,6 +57,23 @@ impl ServiceError {
             Self::Unauthorized(_) => ApiCode::Unauthorized,
         }
     }
+
+    /// 给**客户端**看的文案。
+    ///
+    /// 业务变体返回 payload（那是写给人看的人话）；
+    /// 技术变体一律返回固定文案 —— `Display` 里带 `[Technical]` 前缀和底层细节，
+    /// 那些只该进日志（踩坑 48/74），不能出现在响应里。
+    pub fn public_message(&self) -> &str {
+        match self {
+            Self::InvalidParams(msg)
+            | Self::Conflict(msg)
+            | Self::InvalidCredentials(msg)
+            | Self::Unauthorized(msg) => msg,
+            Self::Database(_) | Self::Password(_) | Self::Token(_) | Self::Cache(_) => {
+                "服务暂时不可用"
+            }
+        }
+    }
 }
 
 /// 展平：剥掉 store 的壳，让 service 只看到 `DbErr`（踩坑 46）。
