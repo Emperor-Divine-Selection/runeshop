@@ -3,12 +3,32 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use common::code::ApiCode;
 use common::response::{ApiResponse, Meta};
+use std::fmt::Display;
 use tonic::Status;
 
+#[derive(Debug)]
 pub struct ApiError {
     pub code: ApiCode,
     pub message: String,
 }
+
+impl ApiError {
+    /// 我们自己发现了「不该发生」的情况时用（比如拼 Set-Cookie 头失败）。
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self {
+            code: ApiCode::Internal,
+            message: message.into(),
+        }
+    }
+}
+
+impl Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{:?}] {}", self.code, self.message) // [Internal] 服务暂时不可用
+    }
+}
+
+impl std::error::Error for ApiError {}
 
 impl From<Status> for ApiError {
     fn from(value: Status) -> Self {
@@ -80,7 +100,10 @@ mod tests {
 
         assert_eq!(json["code"], 1004, "body: {json}");
         assert_eq!(json["message"], "用户名已被占用", "body: {json}");
-        assert!(json["data"].is_null(), "失败时 data 恒为 null，body: {json}");
+        assert!(
+            json["data"].is_null(),
+            "失败时 data 恒为 null，body: {json}"
+        );
         assert!(json["meta"].is_object(), "meta 恒存在，body: {json}");
     }
 
@@ -96,8 +119,7 @@ mod tests {
     /// Unauthenticated → 401 + 1002（登录失败与未登录在这一层合并，见 error.rs 顶部注释）。
     #[tokio::test]
     async fn unauthenticated_maps_to_401_and_1002() {
-        let err: ApiError =
-            Status::unauthenticated("[InvalidCredentials] 用户名或密码错误").into();
+        let err: ApiError = Status::unauthenticated("[InvalidCredentials] 用户名或密码错误").into();
         let resp = err.into_response();
 
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);

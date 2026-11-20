@@ -1,14 +1,11 @@
-use axum::{
-    Router,
-    routing::{get, post},
-};
+pub mod auth;
 
-use crate::handler;
 use crate::state::AppState;
+use axum::{Router, routing::get};
 
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
-        .route("/auth/register", post(handler::customer::register))
+        .merge(auth::routes())
         .with_state(state)
 }

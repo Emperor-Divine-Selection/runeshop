@@ -15,9 +15,11 @@
 
 ---
 
-## 0. 当前状态（2026-11-18，先读这段）
+## 0. 当前状态（2026-11-21，先读这段）
 
-**第一刀（`customers`）走到 §10 步 6 已完成：identity 的五个 rpc 全部能用 `grpcurl` 调通；gateway 刚起步。**
+**第一刀（`customers`）走到 §10 步 7 中段：identity 五个 rpc 已通；gateway 的 `register` / `login`
+已经经 curl 打通（`Set-Cookie` 四属性齐全，Valkey 里能查到 `session:{token}`），
+还差 `/auth/me`（要中间件）和 `/auth/logout`，之后是步 8 的 curl 四连。**
 
 2026-11-12 的定稿推翻了 11-11 晚那版骨架的四条口径：
 
@@ -371,11 +373,16 @@ type Api<T> = { code: number; message: string; data: T | null; meta: Meta; trace
 ### POST /auth/login
 
 ```json
-{ "token": "...", "expires_in": 86400, "role": "customer" }
+{ "code": 0, "message": "ok", "data": null, "meta": {}, "trace_id": "..." }
 ```
 
+- **`token` 只出现在 `Set-Cookie` 里，绝不进 body** —— 进了 body，JS 就能读，httpOnly 白设（§4.2）
+- 成功只回 `code: 0`：凭据在 Cookie 里，**用户信息一律由 `/auth/me` 提供**
+  （唯一入口，避免同一个状态两个来源；也顺手删掉了 `expires_in` —— 客户端不持有 token，
+  什么时候失效由浏览器的 `Max-Age` 管，返回它前端也没有动作可做）
 - `401 + code 1001` 时**用户名不存在与密码错误返回完全相同的响应**（否则等于送攻击者一个用户枚举接口，踩坑 51）
-- 同时 `Set-Cookie`（§4.2 四个属性一个不能少）
+- `Set-Cookie` 四个属性一个不能少（§4.2）；`Max-Age` 与 identity 的 Valkey TTL **同源**，
+  都读 `SESSION_TTL_SECONDS`
 
 ### GET /auth/me
 
@@ -425,8 +432,9 @@ message GetCustomerRequest { string user_id = 1; }
 `GetCustomer` 是 §15 第 7 条补的：`/auth/me` 要 `username` / `email`，而 `ValidateSession`
 只回答「你是谁」。拆成两个 rpc，各自只干一件事。
 
-⚠️ `LoginResponse` 里**没有 `expires_in`** —— §7 的 HTTP 响应有它，但那是 gateway 从
-`SESSION_TTL_SECONDS` 填的，不是 identity 的业务数据。
+⚠️ `LoginResponse` 里的 `user_id` / `role` **gateway 现在不读** —— 登录的 HTTP 响应只有
+`code: 0`，用户信息一律走 `/auth/me`（`ValidateSession` + `GetCustomer`）。proto 字段留着
+（字段号是契约，删了才需要 `reserved`），但别把它们当作「登录响应该带的东西」的依据。
 
 **proto 铁律：字段号才是身份，字段名不是。**
 
@@ -769,10 +777,12 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 - [x] **0. 骨架**（11-13 按 §0.1 的形态重做）
       虚拟 workspace（`common` / `identity` / `gateway` / `migration-identity`）+ postgres/valkey + `ensure_database` 能建库
       验收：`Checking` 数 = `workspace_members` 数；`cargo run -p migration-identity` 后 `\l` 出现 `identity_db`
-- [ ] **1. 第一刀：`customers` 八步**（当前，§10）← **下一个动作：步 7 gateway**
+- [ ] **1. 第一刀：`customers` 八步**（当前，§10）← **下一个动作：步 7 的 `/auth/me` + 中间件**
       进度：步 1 建表 ✅、步 2 entity ✅、步 3 store ✅、步 4 service ✅、
             **步 5 proto + tonic server ✅（50051 + reflection）**、
-            **步 6 `grpcurl` 四连 ✅**、步 7 gateway ⬜、步 8 `curl` 四连 ⬜
+            **步 6 `grpcurl` 四连 ✅**、
+            **步 7 gateway：register ✅ / login ✅（`Set-Cookie` 四属性）/ me ⬜ / logout ⬜**、
+            步 8 `curl` 四连 ⬜
       验收：§10 第 6 步 `grpcurl` 四连 + 第 8 步 `curl` 四连全过
 - [ ] **2. 把第一刀的同一套实现用到 `merchants` / `operators`**
       验收：三张表都能 register / login / me / logout，`role` 各自正确（踩坑 94）

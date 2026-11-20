@@ -1001,6 +1001,8 @@ dependencies = [
  "axum",
  "axum-extra",
  "common",
+ "cookie",
+ "dotenvy",
  "prost",
  "protoc-bin-vendored",
  "serde",
