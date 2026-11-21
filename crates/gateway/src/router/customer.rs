@@ -2,6 +2,7 @@ use axum::{
     Router, middleware,
     routing::{get, post},
 };
+use common::role::Role;
 
 use crate::handler::customer;
 use crate::middleware::auth::auth_middleware;
@@ -16,7 +17,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/customer/auth/me",
             // route_layer 只作用在这条路由：register / login / logout 不能被拦住
             get(customer::me).route_layer(middleware::from_fn_with_state(
-                state.clone(),
+                (state.clone(), Role::Customer),
                 auth_middleware,
             )),
         )

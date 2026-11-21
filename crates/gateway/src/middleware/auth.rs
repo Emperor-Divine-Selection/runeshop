@@ -9,10 +9,15 @@ use common::role::Role;
 
 use crate::{error::ApiError, grpc::ValidateSessionRequest, state::AppState};
 
-use super::CurrentUser; // 或者本文件定义
+use super::CurrentUser;
 
+/// 认证中间件：Cookie → ValidateSession → 校验角色 → 注入 CurrentUser
+///
+/// `state` 是个元组 —— 除了 AppState 还带着「这个端的路由要求哪个角色」。
+/// 角色校验放在这里而不是 handler：将来 /merchant/*、/orders/* 都挂同一个函数，
+/// 漏写一个就是越权洞，而编译器不会提醒（踩坑 94 的正面用法）。
 pub async fn auth_middleware(
-    State(state): State<AppState>,
+    State((state, required)): State<(AppState, Role)>,
     jar: CookieJar,
     mut request: Request,
     next: Next,
@@ -41,6 +46,16 @@ pub async fn auth_middleware(
         code: ApiCode::Unauthorized,
         message: "登录状态异常".to_owned(),
     })?;
+
+    // 跨端串用：商户的 token 打到顾客端 → 401 + 1002。
+    // 语义上更像 403，但客户端动作和「未登录」一样（去登录页），
+    // 按 §6 的判据合并成同一个码。
+    if role != required {
+        return Err(ApiError {
+            code: ApiCode::Unauthorized,
+            message: "未登录或登录已过期".to_owned(),
+        });
+    }
 
     request.extensions_mut().insert(CurrentUser {
         id: reply.user_id,
