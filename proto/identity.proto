@@ -2,11 +2,19 @@ syntax = "proto3";
 
 package identity.v1;
 
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_CUSTOMER = 1;
+  ROLE_MERCHANT = 2;
+  ROLE_OPERATOR = 3;
+}
+
 service IdentityService {
+  // 顾客专用 —— 商户走入驻审核（§15 第 1 条），运营由引导超管创建
   rpc Register(RegisterRequest) returns (RegisterResponse);
   rpc Login(LoginRequest) returns (LoginResponse);
   rpc ValidateSession(ValidateSessionRequest) returns (ValidateSessionResponse);
-  rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 }
 
@@ -25,6 +33,7 @@ message RegisterResponse {
 message LoginRequest {
   string username = 1;
   string password = 2;
+  Role role = 3;
 }
 
 message LoginResponse {
@@ -42,20 +51,22 @@ message ValidateSessionRequest {
 message ValidateSessionResponse {
   bool valid = 1;
   string user_id = 2;
-  string role = 3;
+  // 无效 session 时是 ROLE_UNSPECIFIED（调用方只看 valid）
+  Role role = 3;
 }
 
 // user_id 只能由 gateway 从 session 推导后填充，绝不允许来自 HTTP 请求参数。
 // 这是 IDOR 防线（AGENTS.md §9）：handler 里只认 CurrentUser.id，不读请求体里的 id。
-message GetCustomerRequest {
-  string user_id = 1;
+message GetAccountRequest {
+  Role role = 1;
+  string user_id = 2;
 }
 
-message GetCustomerResponse {
+message GetAccountResponse {
   string id = 1;
   string username = 2;
   string email = 3;
-  string role = 4;
+  Role role = 4;
 }
 
 message LogoutRequest {

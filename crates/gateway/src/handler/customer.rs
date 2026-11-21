@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::ApiError,
-    grpc::{GetCustomerRequest, LoginRequest, LogoutRequest, RegisterRequest},
+    grpc::{GetAccountRequest, LoginRequest, LogoutRequest, RegisterRequest, Role as ProtoRole},
     middleware::CurrentUser,
     response::Envelope,
     state::AppState,
@@ -74,6 +74,7 @@ pub async fn login(
         .login(LoginRequest {
             username: body.username,
             password: body.password,
+            role: ProtoRole::Customer as i32,
         })
         .await?
         .into_inner();
@@ -136,7 +137,8 @@ pub async fn me(
     let mut client = state.identity.clone();
 
     let reply = client
-        .get_customer(GetCustomerRequest {
+        .get_account(GetAccountRequest {
+            role: ProtoRole::Customer as i32,
             user_id: current.id, // ← 只能来自 token，不能来自请求参数（§9.1）
         })
         .await?

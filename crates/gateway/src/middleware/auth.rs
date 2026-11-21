@@ -7,7 +7,9 @@ use axum_extra::extract::cookie::CookieJar;
 use common::code::ApiCode;
 use common::role::Role;
 
-use crate::{error::ApiError, grpc::ValidateSessionRequest, state::AppState};
+use crate::{
+    error::ApiError, grpc::Role as ProtoRole, grpc::ValidateSessionRequest, state::AppState,
+};
 
 use super::CurrentUser;
 
@@ -42,10 +44,17 @@ pub async fn auth_middleware(
         });
     }
 
-    let role = Role::parse(&reply.role).ok_or(ApiError {
-        code: ApiCode::Unauthorized,
-        message: "登录状态异常".to_owned(),
-    })?;
+    let role = match ProtoRole::try_from(reply.role) {
+        Ok(ProtoRole::Customer) => Role::Customer,
+        Ok(ProtoRole::Merchant) => Role::Merchant,
+        Ok(ProtoRole::Operator) => Role::Operator,
+        _ => {
+            return Err(ApiError {
+                code: ApiCode::Unauthorized,
+                message: "登录状态异常".to_owned(),
+            });
+        }
+    };
 
     // 跨端串用：商户的 token 打到顾客端 → 401 + 1002。
     // 语义上更像 403，但客户端动作和「未登录」一样（去登录页），
