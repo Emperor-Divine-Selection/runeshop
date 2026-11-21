@@ -5,9 +5,9 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::service::credential::session::SessionStore;
+use crate::service::credential::session::validate_session;
 use crate::service::customer::{LoginInput, RegisterInput, login, logout, me, register};
 use crate::service::error::ServiceError;
-use crate::service::credential::session::validate_session;
 
 include!(concat!(env!("OUT_DIR"), "/identity.v1.rs"));
 
@@ -63,7 +63,7 @@ impl identity_service_server::IdentityService for IdentityGrpc {
     ) -> Result<Response<LoginResponse>, Status> {
         let input = request.into_inner();
 
-        let (token, model) = login(
+        let token = login(
             &self.db,
             &self.sessions,
             LoginInput {
@@ -74,11 +74,7 @@ impl identity_service_server::IdentityService for IdentityGrpc {
         .await
         .map_err(to_status)?;
 
-        Ok(Response::new(LoginResponse {
-            token,
-            user_id: model.id.to_string(),
-            role: Role::Customer.as_str().to_string(),
-        }))
+        Ok(Response::new(LoginResponse { token }))
     }
 
     async fn validate_session(

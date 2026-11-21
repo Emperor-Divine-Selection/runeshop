@@ -432,9 +432,10 @@ message GetCustomerRequest { string user_id = 1; }
 `GetCustomer` 是 §15 第 7 条补的：`/auth/me` 要 `username` / `email`，而 `ValidateSession`
 只回答「你是谁」。拆成两个 rpc，各自只干一件事。
 
-⚠️ `LoginResponse` 里的 `user_id` / `role` **gateway 现在不读** —— 登录的 HTTP 响应只有
-`code: 0`，用户信息一律走 `/auth/me`（`ValidateSession` + `GetCustomer`）。proto 字段留着
-（字段号是契约，删了才需要 `reserved`），但别把它们当作「登录响应该带的东西」的依据。
+⚠️ `LoginResponse` **只剩 `token`** —— 原来的 2/3 号（`user_id` / `role`）已删除并 `reserved`。
+gateway 不读它们：登录的 HTTP 响应只有 `code: 0`，用户信息一律走 `/auth/me`
+（`ValidateSession` + `GetCustomer`）。**删字段必须 `reserved` 焊死字段号**，否则将来有人复用
+2 号，老客户端会把它解析成 `user_id` 且不报错（§8 铁律）。
 
 **proto 铁律：字段号才是身份，字段名不是。**
 

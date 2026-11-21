@@ -29,8 +29,10 @@ message LoginRequest {
 
 message LoginResponse {
   string token = 1;
-  string user_id = 2;
-  string role = 3;
+  // 2/3 曾是 user_id / role；2026-11-21 删除 —— 登录只发 Set-Cookie，
+  // 用户信息一律走 /auth/me。字段号永久退役。
+  reserved 2, 3;
+  reserved "user_id", "role";
 }
 
 message ValidateSessionRequest {

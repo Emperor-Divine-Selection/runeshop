@@ -1,15 +1,19 @@
 use axum::{
-    Json,
+    Extension, Json,
     extract::State,
     http::{HeaderValue, header::SET_COOKIE},
 };
-use axum_extra::extract::cookie::{Cookie, SameSite};
+use axum_extra::extract::{
+    CookieJar,
+    cookie::{Cookie, SameSite},
+};
 use cookie::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     error::ApiError,
-    grpc::{LoginRequest, RegisterRequest},
+    grpc::{GetCustomerRequest, LoginRequest, LogoutRequest, RegisterRequest},
+    middleware::CurrentUser,
     response::Envelope,
     state::AppState,
 };
@@ -40,8 +44,7 @@ pub async fn register(
             password: body.password,
             email: body.email,
         })
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .into_inner();
 
     Ok(Envelope::created(RegisterReply {
@@ -72,8 +75,7 @@ pub async fn login(
             username: body.username,
             password: body.password,
         })
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .into_inner();
 
     let cookie = Cookie::build(("session", reply.token))
@@ -90,4 +92,60 @@ pub async fn login(
         .map_err(|_| ApiError::internal("Set-Cookie 头构造失败"))?;
 
     Ok(Envelope::ok(()).header(SET_COOKIE, value))
+}
+
+pub async fn logout(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<Envelope<()>, ApiError> {
+    if let Some(token) = jar.get("session").map(|cookie| cookie.value().to_owned()) {
+        let mut client = state.identity.clone();
+        client.logout(LogoutRequest { token }).await?;
+    }
+
+    let cleared = Cookie::build(("session", ""))
+        .http_only(true)
+        .secure(true)
+        .same_site(SameSite::Lax)
+        .path("/")
+        .max_age(Duration::ZERO)
+        .build();
+
+    let value = HeaderValue::from_str(&cleared.to_string())
+        .map_err(|_| ApiError::internal("Set-Cookie 头构造失败"))?;
+
+    Ok(Envelope::ok(()).header(SET_COOKIE, value))
+}
+
+/// `/customer/auth/me` 的响应。
+///
+/// 字段和 `/auth/me` 的规格（§7）一一对应 —— 这是用户信息**唯一**的出口，
+/// 登录只回 `code: 0`。
+#[derive(Serialize)]
+pub struct MeReply {
+    pub id: String,
+    pub username: String,
+    pub email: String,
+    pub role: String,
+}
+
+pub async fn me(
+    State(state): State<AppState>,
+    Extension(current): Extension<CurrentUser>,
+) -> Result<Envelope<MeReply>, ApiError> {
+    let mut client = state.identity.clone();
+
+    let reply = client
+        .get_customer(GetCustomerRequest {
+            user_id: current.id, // ← 只能来自 token，不能来自请求参数（§9.1）
+        })
+        .await?
+        .into_inner();
+
+    Ok(Envelope::ok(MeReply {
+        id: reply.id,
+        username: reply.username,
+        email: reply.email,
+        role: current.role.as_str().to_owned(),
+    }))
 }

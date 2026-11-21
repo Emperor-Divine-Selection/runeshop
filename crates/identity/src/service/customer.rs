@@ -67,7 +67,7 @@ pub async fn login<C: ConnectionTrait>(
     db: &C,
     session: &SessionStore,
     input: LoginInput,
-) -> Result<(String, Model), ServiceError> {
+) -> Result<String, ServiceError> {
     let username = normalize_username(&input.username);
 
     // 用户名不存在与密码错必须返回【同一条】错误（踩坑 51），
@@ -89,7 +89,7 @@ pub async fn login<C: ConnectionTrait>(
     let token = generate_token()?;
     session.save(&token, Role::Customer, &customer.id).await?;
 
-    Ok((token, customer))
+    Ok(token)
 }
 
 /// 按 id 取顾客。给 `GetCustomer` RPC 和 `me` 共用。
