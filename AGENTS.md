@@ -17,9 +17,9 @@
 
 ## 0. 当前状态（2026-11-21，先读这段）
 
-**第一刀（`customers`）走到 §10 步 7 中段：identity 五个 rpc 已通；gateway 的 `register` / `login`
-已经经 curl 打通（`Set-Cookie` 四属性齐全，Valkey 里能查到 `session:{token}`），
-还差 `/auth/me`（要中间件）和 `/auth/logout`，之后是步 8 的 curl 四连。**
+**第一刀（`customers`）八步全部跑通：identity 五个 rpc 用 `grpcurl` 验过；gateway 四个接口
+（`/customer/auth/{register,login,me,logout}`）经 curl 四连验过 —— `Set-Cookie` 四属性齐全，
+带 Cookie 能拿到 `{id, username, email, role}`，登出后再访问 `/me` 返 `401 + code:1002`。**
 
 2026-11-12 的定稿推翻了 11-11 晚那版骨架的四条口径：
 
@@ -254,7 +254,7 @@ SET session:{token} "{role}:{id}" EX 86400
 
 - 只存 `role:id`（如 `customer:0199...`），**不存资料**
 - 理由：session 是「你是谁」的**凭证缓存**，不是「你的资料」缓存
-- `/auth/me` 每次查库拿资料
+- `/customer/auth/me` 每次查库拿资料
 - 登出 = `DEL session:{token}` —— 天然支持**即时吊销**（改密码踢掉所有设备），JWT 做不到
 - token 用 **32 字节 CSPRNG**（`rand` / `getrandom`），base64url 编码；**不要**用 UUID 当凭据
 
@@ -358,7 +358,7 @@ type Api<T> = { code: number; message: string; data: T | null; meta: Meta; trace
 
 统一：JSON、UUID v7、RFC3339 UTC、信封见 §5。
 
-### POST /auth/register
+### POST /customer/auth/register
 
 ```json
 { "username": "alice", "email": "a@b.com", "password": "********" }
@@ -370,27 +370,27 @@ type Api<T> = { code: number; message: string; data: T | null; meta: Meta; trace
 - **注册不自动登录** —— 注册和登录各干一件事，出问题能分清是哪一步
 - 归一化 `trim()` + `to_lowercase()`：**写和读都要做，且必须一模一样**（踩坑 62/86）
 
-### POST /auth/login
+### POST /customer/auth/login
 
 ```json
 { "code": 0, "message": "ok", "data": null, "meta": {}, "trace_id": "..." }
 ```
 
 - **`token` 只出现在 `Set-Cookie` 里，绝不进 body** —— 进了 body，JS 就能读，httpOnly 白设（§4.2）
-- 成功只回 `code: 0`：凭据在 Cookie 里，**用户信息一律由 `/auth/me` 提供**
+- 成功只回 `code: 0`：凭据在 Cookie 里，**用户信息一律由 `/customer/auth/me` 提供**
   （唯一入口，避免同一个状态两个来源；也顺手删掉了 `expires_in` —— 客户端不持有 token，
   什么时候失效由浏览器的 `Max-Age` 管，返回它前端也没有动作可做）
 - `401 + code 1001` 时**用户名不存在与密码错误返回完全相同的响应**（否则等于送攻击者一个用户枚举接口，踩坑 51）
 - `Set-Cookie` 四个属性一个不能少（§4.2）；`Max-Age` 与 identity 的 Valkey TTL **同源**，
   都读 `SESSION_TTL_SECONDS`
 
-### GET /auth/me
+### GET /customer/auth/me
 
 - `200` → `{id, username, email, role}`
 - 无 / 坏 / 过期 token → `401 + code 1002`
 - **没登录是 401 不是 403**：401 = 不知道你是谁，403 = 知道但你没权限
 
-### POST /auth/logout
+### POST /customer/auth/logout
 
 - `200 + code:0`（**不是 204**）
 - **幂等**：token 有效无效都成功
@@ -429,11 +429,11 @@ message ValidateSessionResponse {
 message GetCustomerRequest { string user_id = 1; }
 ```
 
-`GetCustomer` 是 §15 第 7 条补的：`/auth/me` 要 `username` / `email`，而 `ValidateSession`
+`GetCustomer` 是 §15 第 7 条补的：`/customer/auth/me` 要 `username` / `email`，而 `ValidateSession`
 只回答「你是谁」。拆成两个 rpc，各自只干一件事。
 
 ⚠️ `LoginResponse` **只剩 `token`** —— 原来的 2/3 号（`user_id` / `role`）已删除并 `reserved`。
-gateway 不读它们：登录的 HTTP 响应只有 `code: 0`，用户信息一律走 `/auth/me`
+gateway 不读它们：登录的 HTTP 响应只有 `code: 0`，用户信息一律走 `/customer/auth/me`
 （`ValidateSession` + `GetCustomer`）。**删字段必须 `reserved` 焊死字段号**，否则将来有人复用
 2 号，老客户端会把它解析成 `user_id` 且不报错（§8 铁律）。
 
@@ -503,7 +503,7 @@ async fn auth_middleware(
 
 1. **id 只能来自 token 推导**：middleware 调 `ValidateSession` 拿到 `user_id`，塞进
    `CurrentUser`；handler 只读 `CurrentUser.id`，**从不读请求体/查询参数里的 id**。
-2. **`/auth/me` 的请求 DTO 里没有 id 字段** —— 客户端连一个能填的地方都没有。
+2. **`/customer/auth/me` 的请求 DTO 里没有 id 字段** —— 客户端连一个能填的地方都没有。
 3. **将来要看别人的资料**（商品页显示卖家），必须是**另一条带授权规则的接口**，
    不是把 `GetCustomer` 放宽。
 
@@ -534,7 +534,7 @@ let id = params.user_id.unwrap_or(current_user.id);   // ❌ 绝不这么写
 | 5 | proto + tonic server（50051），四个 rpc + reflection | `proto/identity.proto`、`identity/src/grpc/` | `grpcurl -plaintext localhost:50051 list` 列出 `IdentityService` |
 | 6 | **`grpcurl` 四连** | 命令行 | 见下方脚本，**这一步不能跳** |
 | 7 | gateway（8080）：Cookie 解析 → `ValidateSession` → 注入身份 | `gateway/src/middleware/auth.rs`（§9） | 无 Cookie 访问受保护路由 → `401 + code 1002` |
-| 8 | **`curl` 经 gateway 四连** | 命令行 | `Set-Cookie` 四个属性齐全；登出后 `/auth/me` 返 `1002` |
+| 8 | **`curl` 经 gateway 四连** | 命令行 | `Set-Cookie` 四个属性齐全；登出后 `/customer/auth/me` 返 `1002` |
 
 **第 6 步为什么不能跳**：gateway 写完才发现 gRPC 有问题，就是**两个变量一起变**，排不出来。
 先把 gRPC 这层钉死，gateway 的 bug 才只可能是 gateway 的 bug。
@@ -552,13 +552,13 @@ grpcurl -plaintext -d "{\"token\":\"$T\"}" localhost:50051 identity.v1.IdentityS
 
 ```bash
 # 第 8 步：经 gateway 四连
-curl -i -X POST localhost:8080/auth/register -H 'content-type: application/json' \
+curl -i -X POST localhost:8080/customer/auth/register -H 'content-type: application/json' \
      -d '{"username":"bob","email":"b@b.com","password":"pass1234"}'
-curl -i -c /tmp/ck -X POST localhost:8080/auth/login -H 'content-type: application/json' \
+curl -i -c /tmp/ck -X POST localhost:8080/customer/auth/login -H 'content-type: application/json' \
      -d '{"username":"bob","password":"pass1234"}'        # 看 Set-Cookie
-curl -i -b /tmp/ck localhost:8080/auth/me                  # 200 + code:0
-curl -i -b /tmp/ck -X POST localhost:8080/auth/logout      # 200 + code:0
-curl -i -b /tmp/ck localhost:8080/auth/me                  # 401 + code:1002
+curl -i -b /tmp/ck localhost:8080/customer/auth/me                  # 200 + code:0
+curl -i -b /tmp/ck -X POST localhost:8080/customer/auth/logout      # 200 + code:0
+curl -i -b /tmp/ck localhost:8080/customer/auth/me                  # 401 + code:1002
 ```
 
 > **「跑通后复制到 merchants / operators」的正确理解**：复用**同一份实现**
@@ -767,7 +767,7 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 | 4 | refresh token | 未讨论 | 现在只有 24h session，无刷新 |
 | 5 | 全站限流 `429` | 留位 | §6 先占号不给语义 |
 | 6 | trace 可视化（OTel + Jaeger） | 本期不做 | §12.1 已把 `trace_id` 传导写好，将来只换 exporter |
-| 7 | **第一刀的 proto 缺「查资料」的 rpc** | 步 5 定 | §7 的 `/auth/me` 要返回 `username` / `email`，但 §8 的 `ValidateSessionResponse` 只有 `valid` / `user_id` / `role`。倾向**加第五个 rpc `GetCustomer(id)`**，让 `ValidateSession` 保持「只回答你是谁」；备选是给 `ValidateSession` 加字段，但那会让一个 rpc 干两件事 |
+| 7 | **第一刀的 proto 缺「查资料」的 rpc** | 步 5 定 | §7 的 `/customer/auth/me` 要返回 `username` / `email`，但 §8 的 `ValidateSessionResponse` 只有 `valid` / `user_id` / `role`。倾向**加第五个 rpc `GetCustomer(id)`**，让 `ValidateSession` 保持「只回答你是谁」；备选是给 `ValidateSession` 加字段，但那会让一个 rpc 干两件事 |
 
 ---
 
@@ -778,14 +778,14 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 - [x] **0. 骨架**（11-13 按 §0.1 的形态重做）
       虚拟 workspace（`common` / `identity` / `gateway` / `migration-identity`）+ postgres/valkey + `ensure_database` 能建库
       验收：`Checking` 数 = `workspace_members` 数；`cargo run -p migration-identity` 后 `\l` 出现 `identity_db`
-- [ ] **1. 第一刀：`customers` 八步**（当前，§10）← **下一个动作：步 7 的 `/auth/me` + 中间件**
+- [x] **1. 第一刀：`customers` 八步**（§10）✅ 2026-11-21
       进度：步 1 建表 ✅、步 2 entity ✅、步 3 store ✅、步 4 service ✅、
             **步 5 proto + tonic server ✅（50051 + reflection）**、
             **步 6 `grpcurl` 四连 ✅**、
-            **步 7 gateway：register ✅ / login ✅（`Set-Cookie` 四属性）/ me ⬜ / logout ⬜**、
-            步 8 `curl` 四连 ⬜
+            **步 7 gateway ✅：register / login / me / logout（auth 中间件 + Set-Cookie 四属性）**、
+            **步 8 `curl` 四连 ✅**（无 Cookie / 伪造 token → 401 + 1002；登出后 `/me` 同样）
       验收：§10 第 6 步 `grpcurl` 四连 + 第 8 步 `curl` 四连全过
-- [ ] **2. 把第一刀的同一套实现用到 `merchants` / `operators`**
+- [ ] **2. 把第一刀的同一套实现用到 `merchants` / `operators`**（当前）← 下一个动作
       验收：三张表都能 register / login / me / logout，`role` 各自正确（踩坑 94）
 - [ ] **3. 商户入驻审核**（§15 第 1 条定了再做）
 - [ ] **4. 商品写**：建商品（catalog），商户身份从 metadata 取
@@ -830,7 +830,7 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 | SSR 取数据 | `$fetch(url, { headers: useRequestHeaders(['cookie']) })` | 服务端没有浏览器自动带 Cookie（踩坑 106） |
 
 - ⚠️ 三个前端现在**连不上任何后端**（旧的删了、新的还没写）—— 这是预期状态，别去「修」
-- ⚠️ 定稿后前端不再有「路由守卫读 token」这一步，登录态靠 `/auth/me` 探一次；具体实现等 §16 第 1 刀跑通再动
+- ⚠️ 定稿后前端不再有「路由守卫读 token」这一步，登录态靠 `/customer/auth/me` 探一次；具体实现等 §16 第 1 刀跑通再动
 
 **storefront 视觉五条硬约束**
 
