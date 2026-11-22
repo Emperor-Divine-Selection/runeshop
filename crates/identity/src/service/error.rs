@@ -30,6 +30,10 @@ pub enum ServiceError {
     #[error("[Technical] {0}")]
     Cache(#[from] SessionError),
 
+    /// 数据不一致（比如商户的店铺不存在）—— 不是用户的问题，也不能静默
+    #[error("[Technical] {0}")]
+    Internal(String),
+
     /// 凭证错误：登录时用户名不存在 **或** 密码不匹配。
     /// 两条分支必须共用这一个变体，否则等于送给攻击者一个用户枚举接口（踩坑 51）。
     #[error("[InvalidCredentials] {0}")]
@@ -53,6 +57,7 @@ impl ServiceError {
             Self::Password(_) => ApiCode::Internal,
             Self::Token(_) => ApiCode::Internal,
             Self::Cache(_) => ApiCode::Internal,
+            Self::Internal(_) => ApiCode::Internal,
             Self::InvalidCredentials(_) => ApiCode::InvalidCredentials,
             Self::Unauthorized(_) => ApiCode::Unauthorized,
         }
@@ -69,7 +74,11 @@ impl ServiceError {
             | Self::Conflict(msg)
             | Self::InvalidCredentials(msg)
             | Self::Unauthorized(msg) => msg,
-            Self::Database(_) | Self::Password(_) | Self::Token(_) | Self::Cache(_) => {
+            Self::Database(_)
+            | Self::Password(_)
+            | Self::Token(_)
+            | Self::Cache(_)
+            | Self::Internal(_) => {
                 "服务暂时不可用"
             }
         }

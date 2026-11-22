@@ -1,3 +1,4 @@
+mod cookie;
 mod error;
 mod grpc;
 mod handler;
@@ -13,7 +14,7 @@ use common::telemetry::log_init;
 use tonic::transport::Channel;
 
 use crate::grpc::identity_service_client::IdentityServiceClient;
-use crate::state::AppState;
+use crate::state::GatewayState;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -31,7 +32,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let identity = IdentityServiceClient::new(channel);
 
-    let state = AppState {
+    let state = GatewayState {
         identity,
         session_ttl_seconds,
     };

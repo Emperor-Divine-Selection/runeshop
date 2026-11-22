@@ -4,6 +4,7 @@ use sea_orm::ConnectionTrait;
 use uuid::Uuid;
 
 use crate::model::customers::Model;
+use crate::service::LoginInput;
 use crate::service::credential::{session::SessionStore, token::generate_token};
 use crate::service::error::ServiceError;
 use crate::service::normalize::{normalize_email, normalize_username};
@@ -52,12 +53,6 @@ pub async fn register<C: ConnectionTrait>(
     };
 
     Ok(create(db, new_customer).await?)
-}
-
-#[derive(Debug)]
-pub struct LoginInput {
-    pub username: String,
-    pub password: String,
 }
 
 /// 登录。成功返回 `(token, 那一行)`。

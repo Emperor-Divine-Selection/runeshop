@@ -8,29 +8,34 @@ use common::code::ApiCode;
 use common::role::Role;
 
 use crate::{
+    cookie::session_cookie_name,
     error::ApiError,
     grpc::{BusinessStatus, Role as ProtoRole, ValidateSessionRequest},
     response::Envelope,
-    state::AppState,
+    state::GatewayState,
 };
 
 use super::CurrentUser;
 
 /// 认证中间件：Cookie → ValidateSession → 校验角色 → 注入 CurrentUser
 ///
-/// `state` 是个元组 —— 除了 AppState 还带着「这个端的路由要求哪个角色」。
+/// `state` 是个元组 —— 除了 GatewayState 还带着「这个端的路由要求哪个角色」。
 /// 角色校验放在这里而不是 handler：将来 /merchant/*、/orders/* 都挂同一个函数，
 /// 漏写一个就是越权洞，而编译器不会提醒（踩坑 94 的正面用法）。
 ///
 /// 返回 `Response` 而不是 `Result`：未登录 / token 失效是**业务失败**
 /// （HTTP 200 + code 1002），传输层故障才是 4xx/5xx —— 两类都在函数内处理完。
 pub async fn auth_middleware(
-    State((state, required)): State<(AppState, Role)>,
+    State((state, required)): State<(GatewayState, Role)>,
     jar: CookieJar,
     mut request: Request,
     next: Next,
 ) -> Response {
-    let Some(token) = jar.get("session").map(|c| c.value().to_owned()) else {
+    // 按端取各自的 Cookie 名 —— 三个端互不覆盖（踩坑 105）
+    let Some(token) = jar
+        .get(session_cookie_name(required))
+        .map(|c| c.value().to_owned())
+    else {
         return unauthorized();
     };
 

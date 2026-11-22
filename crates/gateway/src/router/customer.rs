@@ -6,9 +6,9 @@ use common::role::Role;
 
 use crate::handler::customer;
 use crate::middleware::auth::auth_middleware;
-use crate::state::AppState;
+use crate::state::GatewayState;
 
-pub fn routes(state: AppState) -> Router<AppState> {
+pub fn routes(state: GatewayState) -> Router<GatewayState> {
     Router::new()
         .route("/customer/auth/register", post(customer::register))
         .route("/customer/auth/login", post(customer::login))

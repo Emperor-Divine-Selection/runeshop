@@ -12,3 +12,21 @@ pub enum ApplicationStatus {
     #[sea_orm(string_value = "rejected")]
     Rejected,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "merchant_status")]
+pub enum MerchantStatus {
+    #[sea_orm(string_value = "active")]
+    Active,
+    #[sea_orm(string_value = "frozen")]
+    Frozen,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "shop_status")]
+pub enum ShopStatus {
+    #[sea_orm(string_value = "active")]
+    Active,
+    #[sea_orm(string_value = "frozen")]
+    Frozen,
+}

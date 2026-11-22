@@ -8,7 +8,7 @@ use sea_orm::Database;
 use std::error::Error;
 use tonic::transport::Server;
 
-use crate::grpc::IdentityGrpc;
+use crate::grpc::IdentityState;
 use crate::grpc::identity_service_server::IdentityServiceServer;
 use crate::service::credential::session::SessionStore;
 
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let addr: std::net::SocketAddr = "0.0.0.0:50051".parse()?;
 
     Server::builder()
-        .add_service(IdentityServiceServer::new(IdentityGrpc { db, sessions }))
+        .add_service(IdentityServiceServer::new(IdentityState { db, sessions }))
         .add_service(reflection)
         .serve(addr)
         .await?;

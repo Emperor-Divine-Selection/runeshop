@@ -2,3 +2,7 @@
 
 pub use super::customers::Entity as Customers;
 pub use super::merchant_applications::Entity as MerchantApplications;
+pub use super::merchant_role_permissions::Entity as MerchantRolePermissions;
+pub use super::merchant_roles::Entity as MerchantRoles;
+pub use super::merchants::Entity as Merchants;
+pub use super::shops::Entity as Shops;

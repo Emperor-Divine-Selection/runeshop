@@ -15,11 +15,14 @@
 
 ---
 
-## 0. 当前状态（2026-11-21，先读这段）
+## 0. 当前状态（2026-11-23，先读这段）
 
 **第一刀（`customers`）八步全部跑通：identity 九个 rpc（顾客五个已实现）用 `grpcurl` 验过；gateway 四个接口
 （`/customer/auth/{register,login,me,logout}`）经 curl 四连验过 —— `Set-Cookie` 四属性齐全，
 带 Cookie 能拿到 `{id, username, email, role}`，登出后再访问 `/me` 返 `200 + code:1002`。**
+
+**2026-11-23：商户端登录 / 资料已打通（identity + gateway），Cookie 已按端拆分
+（`session_customer` / `session_merchant`）；运营侧待做。**
 
 2026-11-12 的定稿推翻了 11-11 晚那版骨架的四条口径：
 
@@ -225,8 +228,19 @@ environment:
 ### 4.2 Cookie 属性（写死）
 
 ```
-Set-Cookie: session={token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
+Set-Cookie: session_customer={token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
 ```
+
+**三个端三个名字**（2026-11-23 拆）：
+
+| 端 | Cookie 名 |
+|---|---|
+| 顾客 | `session_customer` |
+| 商户 | `session_merchant` |
+| 运营 | `session_operator` |
+
+理由：**浏览器不按端口隔离 Cookie**（踩坑 105）—— 三个前端都在 localhost，
+共用一个 `session` 会互相覆盖。gateway 的中间件按路由要求的角色选对应的名字。
 
 | 属性 | 作用 | 不许改的理由 |
 |---|---|---|
@@ -416,7 +430,17 @@ type Api<T> = { code: number; message: string; data: T | null; meta: Meta; trace
 
 - `200 + code:0`（**不是 204**）
 - **幂等**：token 有效无效都成功
-- 同时 `Set-Cookie: session=; Max-Age=0`
+- 同时 `Set-Cookie: session_customer=; Max-Age=0`
+
+### 商户端接口（2026-11-23 补）
+
+| 接口 | 成功 | 失败 |
+|---|---|---|
+| `POST /merchant/auth/login` | `200 + code:0` + `session_merchant` Cookie | `200 + code 1001`（密码错 / 未激活）、`200 + code 1002`（账号冻结） |
+| `GET /merchant/auth/me` | `200 + {id, username, email, role, shop_id, shop_name, permissions}` | `200 + 1002`（未登录 / 跨端） |
+| `POST /merchant/auth/logout` | `200 + code:0`，清 `session_merchant` | —— |
+
+`permissions`：owner 返回 `["*"]`（全部权限），staff 返回真实权限码。
 
 > 顺序纪律：**先算 token，再判状态，最后才写外部系统**。
 > 反例见踩坑 78 —— 副作用写在判定之前，登录失败却在 Valkey 留了个 24h 的孤儿 token。
@@ -721,7 +745,7 @@ created_at / updated_at`；`reviewed_*` 可空无默认（踩坑 97），一条 
 
 - **权限是字符串码**（`merchant_application.review` / `product.manage`），Rust 侧用
   `common::permission::Permission` 枚举，数据库只存码
-- **超管 / 店主特判**：`role.code == "super_admin"` / `"owner"` 直接放行 ——
+- **超管 / 店主特判**：`role.permission == "super_admin"` / `"owner"` 直接放行 ——
   否则每加一个新权限都要记得给它们授一遍，忘一次就把自己锁在门外
 - v1 商户只有两个全局角色（`owner` / `staff`），**不做每家店自定义角色**；运营同理
 - 权限**不进 session**：session 活 24h，权限会变。gateway 每次查（或 5 秒缓存）
@@ -892,6 +916,8 @@ ApiError       只负责传输层：gRPC Status → HTTP status，impl IntoRespo
             **步 8 `curl` 四连 ✅**（无 Cookie / 伪造 token → 200 + 1002；登出后 `/me` 同样）
       验收：§10 第 6 步 `grpcurl` 四连 + 第 8 步 `curl` 四连全过
 - [ ] **2. 把第一刀的同一套实现用到 `merchants` / `operators`**（当前）← 下一个动作
+      进度：表 ✅（shops / merchant_roles / merchant_role_permissions / merchants）；
+            identity 商户 login / me ✅；gateway `/merchant/auth/*` ✅（Cookie 按端拆分）；运营侧 ⬜
       验收：顾客 register / login；三端 login / me / logout 都通，`role` 各自正确（踩坑 94）
 - [ ] **3. 商户入驻审核**（设计已定，见 §11.4；等商户端登录跑通再做）
 - [ ] **4. 商品写**：建商品（catalog），`shop_id` 从 metadata 取（操作者 `merchant_id` 一并带上，用于审计）
@@ -933,6 +959,7 @@ ApiError       只负责传输层：gRPC Status → HTTP status，impl IntoRespo
 | 响应信封 | `code !== 0` 就 throw，按 `code` 分支（§6） | `code` 不再等于 HTTP status |
 | `meta` | 恒存在，可能是 `{}` | 分页读 `meta.total`，别判 `meta ?` |
 | 登录态处理 | 按 `code` 走：1002 跳登录页（**在登录页不跳**） | 业务失败是 HTTP 200，不能靠 HTTP status 判断 |
+| Cookie 名 | 按端区分：`session_customer` / `session_merchant` / `session_operator` | 浏览器不按端口隔离，同名会互相覆盖（踩坑 105） |
 | SSR 取数据 | `$fetch(url, { headers: useRequestHeaders(['cookie']) })` | 服务端没有浏览器自动带 Cookie（踩坑 106） |
 
 - ⚠️ 三个前端现在**连不上任何后端**（旧的删了、新的还没写）—— 这是预期状态，别去「修」

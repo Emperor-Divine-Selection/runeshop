@@ -4,4 +4,8 @@ pub mod prelude;
 
 pub mod customers;
 pub mod merchant_applications;
+pub mod merchant_role_permissions;
+pub mod merchant_roles;
+pub mod merchants;
+pub mod shops;
 pub mod sea_orm_active_enums;
