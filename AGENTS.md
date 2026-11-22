@@ -344,13 +344,14 @@ type Api<T> = { code: number; message: string; data: T | null; meta: Meta; trace
 1002  未登录 / 登录失效  → 跳登录页
 1003  参数不合法        → 表单标红
 1004  已被占用          → 表单标红并提示更换
+1005  无权限            → 403，显示「没有这个操作的权限」/ 隐藏入口
 5000  服务内部错误      → 通用错误提示
 ```
 
 - `token 缺失` / `token 无效` / `token 过期` **合并为 1002**（前端动作相同）
 - **对内要清楚，对外要克制**：`StoreError` / `ServiceError` 想分多细分多细（进日志），
   对外只暴露**能改变客户端行为**的（§14）
-- HTTP status 独立说真话：`200` / `400` / `401` / `409` / `429`（本期留位）/ `500`
+- HTTP status 独立说真话：`200` / `400` / `401` / `403` / `409` / `429`（本期留位）/ `500`
 
 ---
 
@@ -574,7 +575,7 @@ curl -i -b /tmp/ck localhost:8080/customer/auth/me                  # 401 + code
 
 | 库 | 表 |
 |---|---|
-| `identity_db` | `customers`、`merchants`、`operators` |
+| `identity_db` | `customers`、`merchants`、`operators`、`shops`、`merchant_applications`、`roles`、`role_permissions`、`merchant_roles`、`merchant_role_permissions` |
 | `catalog_db` | `products`、`product_kinds`、`product_items`、`product_prices` |
 | `order_db` | `orders`、`order_items`、**`product_inventory`** |
 
@@ -606,40 +607,49 @@ curl -i -b /tmp/ck localhost:8080/customer/auth/me                  # 401 + code
 
 代价：两次请求不是原子快照，不一致**无法消除**，只能 UI 兜底（「刚被抢完」而不是「系统错误」）。
 
-### 11.3 账号三张表，各管一端
+### 11.3 账号三张表 + 店铺
 
-| 表 | 是谁 | 密码 | 库 |
+| 表 | 是什么 | 密码 | 库 |
 |---|---|---|---|
 | `customers` | 顾客 | 自己的 | `identity_db` |
-| `merchants` | 商户 | **自己的**（不挂在 customers 上） | `identity_db` |
-| `operators` | 运营（后台） | 自己的 | `identity_db` |
+| `merchants` | 商户账号（人） | **自己的**（不挂在 customers 上） | `identity_db` |
+| `operators` | 运营账号（人） | 自己的 | `identity_db` |
+| `shops` | 店铺（经营主体） | — | `identity_db` |
 
 表名按「**人是谁**」命名，不按「从哪进来」（旧叫 `backoffice`）也不按「多大权限」（`admin`）。
+`shops` 是唯一例外 —— 它不是人，是经营主体。
 
-⚠️ 三张表在**同一个库**、**同一个服务**里写 —— 这是定稿的重要简化：
+⚠️ 三张账号表在**同一个库**、**同一个服务**里写 —— 这是定稿的重要简化：
 不再有 `merchant` 服务，账号相关的写全在 identity 本地事务里完成，**没有跨服务写**。
 但 session 里的 `role` 必须区分三者（踩坑 94：token 不带端类型 = 跨端串用）。
 
-> **已定（2026-11-21）**：见 §11.4 —— 申请与商户拆两张表，申请表**不存密码**，
-> 审批时插入 `merchants(password_hash = NULL)` 并发邀请邮件，商户自己设密。
+**店铺 ≠ 账号（2026-11-22 定）**：一个店铺可以有多个商户账号（店主 + 店小二）。
+`merchants.shop_id` 指向 `shops`，`merchants.role_id` 指向 `merchant_roles`。
+商品和订单只认 `shop_id` —— **人只是操作者，店铺才是归属**（店小二离职不影响商品）。
 
-### 11.4 商户入驻：申请与商户是两张表（2026-11-21 定）
+> **已定（2026-11-21 / 11-22）**：见 §11.4 —— 申请、店铺、商户账号是三张表；
+> 审批时建 `shops` + 店主账号（`password_hash = NULL`）并发邀请邮件，商户自己设密。
+> 权限组见 §11.5。
+
+### 11.4 商户入驻：申请、店铺、账号（2026-11-21 / 11-22 定）
 
 **准入生命周期 ≠ 经营生命周期**，所以不让一张表共用一个状态列（踩坑 95 的延伸）：
 
 | 表 | 状态 | 谁写 |
 |---|---|---|
 | `merchant_applications` | `pending` / `approved` / `rejected` | 申请人提交，运营审核 |
-| `merchants` | `active` / `frozen` | 审批通过时插入，运营冻结/解冻 |
+| `shops` | `active` / `frozen` | 审批通过时插入；冻结 = 整店停业 |
+| `merchants` | `active` / `frozen` | 审批通过时插入店主；冻结 = 单个账号停用 |
 
 **商户与顾客没有任何外键关系**（§11.3）—— 用户是用户，商户是商户，申请是申请。
 申请表不存 `applicant_id`：没有邮件服务时，靠顾客身份证明「谁提交的」反而引入耦合；
 将来要做「申请人查进度」再加可空列即可，向后兼容。
 
-**申请表不存密码**。审批通过时：
+**申请表不存密码**。审批通过时（**一个事务**）：
 
 ```
-事务：  INSERT merchants (password_hash = NULL)        -- NULL = 未激活
+事务：  ① INSERT shops
+        ② INSERT merchants (shop_id, role_id = owner, password_hash = NULL)
 提交后：生成 setup:{token} → merchant:{id}（EX 7 天）+ 发邮件
 商户：  点链接设密码 → 写 password_hash → DEL token
 ```
@@ -648,7 +658,7 @@ curl -i -b /tmp/ck localhost:8080/customer/auth/me                  # 401 + code
 - 「未激活」不是第三个状态值，而是 `password_hash IS NULL`
 - 未激活时登录返回与密码错**完全相同**的 `401 + 1001`（防用户名枚举，踩坑 51）
 - 邀请过期由运营「重发邀请」（重新生成 token，不重建账号）
-- **同一套 token 机制给「忘记密码」复用**，只是 TTL 更短（15 分钟 vs 7 天）
+- **同一套 token 机制给「忘记密码」和「邀请店小二」复用**，只是 TTL 不同
 
 申请表列：`id / shop_name / username / email / status / reviewed_by / reviewed_at / review_note /
 created_at / updated_at`；`reviewed_*` 可空无默认（踩坑 97），一条 CHECK 保证
@@ -657,6 +667,24 @@ created_at / updated_at`；`reviewed_*` 可空无默认（踩坑 97），一条 
 
 邮件：`lettre`（SMTP）；开发期 Mailpit（`axllent/mailpit`，1025 SMTP / 8025 Web UI）。
 **发信必须在事务提交之后**，且发信失败只记日志、不影响审批结果（通知是副作用，不是主流程）。
+
+### 11.5 权限组（运营 / 商户）
+
+两边都用 RBAC：**权限 → 组 → 人**，不往账号表上加布尔列。
+
+| 端 | 组表 | 组-权限 | 人挂组 |
+|---|---|---|---|
+| 运营 | `roles` | `role_permissions (role_id, permission)` | `operators.role_id` |
+| 商户 | `merchant_roles` | `merchant_role_permissions (role_id, permission)` | `merchants.role_id` |
+
+- **权限是字符串码**（`merchant_application.review` / `product.manage`），Rust 侧用
+  `common::permission::Permission` 枚举，数据库只存码
+- **超管 / 店主特判**：`role.code == "super_admin"` / `"owner"` 直接放行 ——
+  否则每加一个新权限都要记得给它们授一遍，忘一次就把自己锁在门外
+- v1 商户只有两个全局角色（`owner` / `staff`），**不做每家店自定义角色**；运营同理
+- 权限**不进 session**：session 活 24h，权限会变。gateway 每次查（或 5 秒缓存）
+- 校验在 **gateway**（§9 的边界）；前端菜单按权限列表过滤，但服务端必须再拦一次
+- 无权限 → `403 + code 1005`（§6）
 
 ---
 
@@ -797,7 +825,7 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 
 | # | 事项 | 状态 | 倾向 |
 |---|---|---|---|
-| 1 | **商户入驻审核**（`merchant_applications` + 部分唯一索引 + CHECK） | **已定（11-21）** | 见 §11.4：两张表（申请 pending/approved/rejected，商户 active/frozen）；申请表不存密码，审批后邮件邀请设密。**补正状态机仍未做**，等有需求再加 `need_more_info` |
+| 1 | **商户入驻审核**（`merchant_applications` + 部分唯一索引 + CHECK） | **已定（11-21 / 11-22）** | 见 §11.4：申请 / 店铺 / 商户账号三张表；审批事务建 `shops` + 店主账号；申请表不存密码，邮件邀请设密；权限见 §11.5。**补正状态机仍未做**，等有需求再加 `need_more_info` |
 | 2 | 对象存储 / 头像（Garage） | 本期不做 | §12 选型表里已无 Garage；旧第 3 项的头像等这一刀定型后再议 |
 | 3 | 异步（Redis Streams：`XADD` / `XREADGROUP` / `XACK`，幂等 / 重试 / 死信） | 本期不做 | 旧第 6 项。要看清 ack 语义，不上 apalis |
 | 4 | refresh token | 未讨论 | 现在只有 24h session，无刷新 |
@@ -824,7 +852,7 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 - [ ] **2. 把第一刀的同一套实现用到 `merchants` / `operators`**（当前）← 下一个动作
       验收：三张表都能 register / login / me / logout，`role` 各自正确（踩坑 94）
 - [ ] **3. 商户入驻审核**（设计已定，见 §11.4；等商户端登录跑通再做）
-- [ ] **4. 商品写**：建商品（catalog），商户身份从 metadata 取
+- [ ] **4. 商品写**：建商品（catalog），`shop_id` 从 metadata 取（操作者 `merchant_id` 一并带上，用于审计）
 - [ ] **5. 商品读**：列表 / 详情 —— 第一次真的**不能 JOIN 店铺名**
 - [ ] **6. 库存 + 读聚合**：`GET /stock?skus=...` 批量 + gateway 三态降级（§11.2）
 - [ ] **7. 下单**：扣库存 + 建订单 = **一次本地事务**（§11.1 的兑现点）
@@ -892,7 +920,7 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 | 条目 | 现在的读法 |
 |---|---|
 | 21 / 79（模块没进编译） | 仍然成立，而且迁移拆成三个 crate 后**更容易踩**：注册错 crate 的表会建到别的库（§13） |
-| 95 / 96 / 97 / 103（入驻申请表的状态机与 CHECK） | 设计已定（§11.4），表还没建。四条教训都直接适用：准入 / 经营两个生命周期不能共用一列、事件时刻不留 INSERT 默认值、CHECK 挡「改了一半」、审批通过必须**同一事务**里建商户 |
+| 95 / 96 / 97 / 103（入驻申请表的状态机与 CHECK） | 设计已定（§11.4），申请表已建。四条教训都直接适用：准入 / 经营两个生命周期不能共用一列、事件时刻不留 INSERT 默认值、CHECK 挡「改了一半」、审批通过必须**同一事务**里建店铺和店主账号 |
 | 118（六个 `Checking <crate>`） | crate 清单变了（`common` + 四个服务 + 三个 migration）。判据改成：`cargo check --workspace` 输出里的 `Checking` 数与 `cargo metadata --no-deps` 的 `workspace_members` **一样多** |
 | 105 / 106 / 104（cookie / SSR） | 全部仍然成立，而且现在**更关键** —— 定稿把认证整个押在 httpOnly Cookie 上（§4、§17） |
 | 109（Nuxt 默认 3000 撞端口） | 已经不撞了（后端挪到 8080），但结论照样成立：**任何 dev server 都要显式配端口 + `strictPort`**，否则会静默 +1（踩坑 115） |
