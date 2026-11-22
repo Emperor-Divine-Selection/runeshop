@@ -3,3 +3,5 @@
 pub mod prelude;
 
 pub mod customers;
+pub mod merchant_applications;
+pub mod sea_orm_active_enums;

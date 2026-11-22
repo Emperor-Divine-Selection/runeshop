@@ -1,5 +1,4 @@
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::schema::*;
 
 pub struct Migration;
 
@@ -13,34 +12,28 @@ impl MigrationName for Migration {
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .create_table(
-                Table::create()
-                    .table(Customers::Table)
-                    .col(pk_uuid(Customers::Id))
-                    .col(timestamp_with_time_zone_default_now(Customers::CreatedAt))
-                    .col(timestamp_with_time_zone_default_now(Customers::UpdatedAt))
-                    .col(string_len_uniq(Customers::Username, 32))
-                    .col(string_len(Customers::PasswordHash, 255))
-                    .col(string_len_uniq(Customers::Email, 255))
-                    .to_owned(),
+            .get_connection()
+            .execute_unprepared(
+                r#"
+                CREATE TABLE customers (
+                    id            uuid PRIMARY KEY,
+                    created_at    timestamptz NOT NULL DEFAULT now(),
+                    updated_at    timestamptz NOT NULL DEFAULT now(),
+                    username      varchar(32)  NOT NULL UNIQUE,
+                    password_hash varchar(255) NOT NULL,
+                    email         varchar(255) NOT NULL UNIQUE
+                )
+                "#,
             )
-            .await
+            .await?;
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(Customers::Table).to_owned())
-            .await
+            .get_connection()
+            .execute_unprepared("DROP TABLE customers")
+            .await?;
+        Ok(())
     }
-}
-
-#[derive(DeriveIden)]
-enum Customers {
-    Table,
-    Id,
-    Username,
-    Email,
-    PasswordHash,
-    CreatedAt,
-    UpdatedAt,
 }

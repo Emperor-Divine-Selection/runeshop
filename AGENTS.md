@@ -662,8 +662,12 @@ curl -i -b /tmp/ck localhost:8080/customer/auth/me                  # 401 + code
 
 申请表列：`id / shop_name / username / email / status / reviewed_by / reviewed_at / review_note /
 created_at / updated_at`；`reviewed_*` 可空无默认（踩坑 97），一条 CHECK 保证
-「非 pending 必须有审核痕迹」（踩坑 103），待审唯一索引：`(username) WHERE status='pending'`、
-`(email) WHERE status='pending'`。
+「非 pending 必须有审核痕迹」（踩坑 103），待审唯一索引：`username` / `email` / `shop_name`，
+**都带 `WHERE status='pending'`**（被拒后可再申请）。
+
+⚠️ **跨表唯一性只能审批时再查一次**：申请表的索引只看得到待审申请，
+已有的 `merchants.username` / `shops.name` 在别的表里。审批插入撞唯一约束 → 409 + 回滚，
+申请保持 pending。低并发够用，但这是踩坑 52 的同类 TOCTOU，别当成数据库层面 100% 拦死。
 
 邮件：`lettre`（SMTP）；开发期 Mailpit（`axllent/mailpit`，1025 SMTP / 8025 Web UI）。
 **发信必须在事务提交之后**，且发信失败只记日志、不影响审批结果（通知是副作用，不是主流程）。
@@ -1447,7 +1451,11 @@ ApiError       只负责映射 HTTP status + 业务 code，impl IntoResponse
 
 **迁移**
 - 历史迁移**不能改**，只能追加 —— **例外**：本地开发库（无真实数据、无其他环境）可以重写，
-  但必须同步 `docker compose down -v` 重建开发库（踩坑 93）
+  但必须同步重建开发库（踩坑 93）
+- **DDL 一律原生 SQL**：迁移体用 `execute_unprepared("CREATE TABLE ...")`，不用 sea-query DSL。
+  理由：enum / 部分索引 / CHECK / 触发器 / 分区都用 SQL 表达最直接，DSL 只是一层翻译。
+  查询仍用 SeaORM；entity 由 `sea-orm-cli generate entity` 从库反读（**DB-first**），
+  生成后人工删掉它给部分索引起的 `#[sea_orm(unique)]`
 - **重建开发库的新办法**（11-13 起）：不必删卷。`DROP DATABASE identity_db` 后重跑
   `cargo run -p migration-identity` 即可 —— 建库和建表都在同一个二进制里（§1.2）
 - `migration-identity` / `-catalog` / `-order` **各管各库**，条目录错 crate = 表建到别的库（`seaql_migrations` 不跨库）
