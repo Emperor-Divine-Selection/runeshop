@@ -1,14 +1,17 @@
 use axum::{
     extract::{Request, State},
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use axum_extra::extract::cookie::CookieJar;
 use common::code::ApiCode;
 use common::role::Role;
 
 use crate::{
-    error::ApiError, grpc::Role as ProtoRole, grpc::ValidateSessionRequest, state::AppState,
+    error::ApiError,
+    grpc::{BusinessStatus, Role as ProtoRole, ValidateSessionRequest},
+    response::Envelope,
+    state::AppState,
 };
 
 use super::CurrentUser;
@@ -18,52 +21,46 @@ use super::CurrentUser;
 /// `state` 是个元组 —— 除了 AppState 还带着「这个端的路由要求哪个角色」。
 /// 角色校验放在这里而不是 handler：将来 /merchant/*、/orders/* 都挂同一个函数，
 /// 漏写一个就是越权洞，而编译器不会提醒（踩坑 94 的正面用法）。
+///
+/// 返回 `Response` 而不是 `Result`：未登录 / token 失效是**业务失败**
+/// （HTTP 200 + code 1002），传输层故障才是 4xx/5xx —— 两类都在函数内处理完。
 pub async fn auth_middleware(
     State((state, required)): State<(AppState, Role)>,
     jar: CookieJar,
     mut request: Request,
     next: Next,
-) -> Result<Response, ApiError> {
+) -> Response {
     let Some(token) = jar.get("session").map(|c| c.value().to_owned()) else {
-        return Err(ApiError {
-            code: ApiCode::Unauthorized,
-            message: "未登录或登录已过期".to_owned(),
-        });
+        return unauthorized();
     };
 
     let mut client = state.identity.clone();
-    let reply = client
-        .validate_session(ValidateSessionRequest { token })
-        .await?
-        .into_inner();
+    let reply = match client.validate_session(ValidateSessionRequest { token }).await {
+        Ok(response) => response.into_inner(),
+        Err(status) => return ApiError::from(status).into_response(),
+    };
+
+    let Some(status) = reply.status else {
+        return ApiError::internal("identity 响应缺少 status").into_response();
+    };
+    if status.code != 0 {
+        return Envelope::<()>::business(status).into_response();
+    }
 
     if !reply.valid {
-        return Err(ApiError {
-            code: ApiCode::Unauthorized,
-            message: "未登录或登录已过期".to_owned(),
-        });
+        return unauthorized();
     }
 
     let role = match ProtoRole::try_from(reply.role) {
         Ok(ProtoRole::Customer) => Role::Customer,
         Ok(ProtoRole::Merchant) => Role::Merchant,
         Ok(ProtoRole::Operator) => Role::Operator,
-        _ => {
-            return Err(ApiError {
-                code: ApiCode::Unauthorized,
-                message: "登录状态异常".to_owned(),
-            });
-        }
+        _ => return unauthorized(),
     };
 
-    // 跨端串用：商户的 token 打到顾客端 → 401 + 1002。
-    // 语义上更像 403，但客户端动作和「未登录」一样（去登录页），
-    // 按 §6 的判据合并成同一个码。
+    // 跨端串用：商户的 token 打到顾客端 → 1002（客户端动作就是重新登录）
     if role != required {
-        return Err(ApiError {
-            code: ApiCode::Unauthorized,
-            message: "未登录或登录已过期".to_owned(),
-        });
+        return unauthorized();
     }
 
     request.extensions_mut().insert(CurrentUser {
@@ -71,5 +68,14 @@ pub async fn auth_middleware(
         role,
     });
 
-    Ok(next.run(request).await)
+    next.run(request).await
+}
+
+/// 未登录 / token 失效 / 跨端串用：统一的业务失败（HTTP 200 + code 1002）。
+fn unauthorized() -> Response {
+    Envelope::<()>::business(BusinessStatus {
+        code: ApiCode::Unauthorized as i32,
+        message: "未登录或登录已过期".to_owned(),
+    })
+    .into_response()
 }

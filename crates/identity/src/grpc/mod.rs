@@ -12,14 +12,33 @@ use crate::service::error::ServiceError;
 
 include!(concat!(env!("OUT_DIR"), "/identity.v1.rs"));
 
-/// proto 的 Role → 领域 Role。`ROLE_UNSPECIFIED` 和未知值一律拒绝。
-fn to_domain_role(value: i32) -> Result<DomainRole, Status> {
-    match Role::try_from(value) {
-        Ok(Role::Customer) => Ok(DomainRole::Customer),
-        Ok(Role::Merchant) => Ok(DomainRole::Merchant),
-        Ok(Role::Operator) => Ok(DomainRole::Operator),
-        _ => Err(Status::invalid_argument("role 不合法")),
+/// 成功时的业务状态。
+fn ok_status() -> BusinessStatus {
+    BusinessStatus {
+        code: ApiCode::Ok as i32,
+        message: "ok".to_owned(),
     }
+}
+
+/// 业务错误 → 响应体里的 status。
+///
+/// 返回 `None` 表示这是技术错误（Internal），调用方应转成 `Err(Status)`，
+/// 走传输层而不是业务层。
+fn business_status(err: &ServiceError) -> Option<BusinessStatus> {
+    match err.code() {
+        ApiCode::Internal => None,
+        code => Some(BusinessStatus {
+            code: code as i32,
+            message: err.public_message().to_owned(),
+        }),
+    }
+}
+
+/// 技术错误 → tonic::Status。只用于「服务内部坏了」，业务错误不进这里。
+fn to_status(err: ServiceError) -> Status {
+    // 原始错误只进日志，不发给客户端 —— 可能含 SQL / 表名
+    tracing::error!(error = %err, "identity 技术错误");
+    Status::internal("internal error")
 }
 
 /// 领域 Role → proto Role 的字段值。
@@ -37,29 +56,15 @@ pub struct IdentityGrpc {
     pub sessions: SessionStore,
 }
 
-/// ServiceError → tonic::Status 的唯一映射点。
-fn to_status(err: impl Into<ServiceError>) -> Status {
-    let err = err.into();
-    let public = err.public_message();
-    match err.code() {
-        ApiCode::InvalidCredentials | ApiCode::Unauthorized => Status::unauthenticated(public),
-        ApiCode::InvalidParams => Status::invalid_argument(public),
-        ApiCode::Conflict => Status::already_exists(public),
-        // 内部错误绝不把细节发给客户端 —— 可能含 SQL / 表名
-        ApiCode::Internal => Status::internal("internal error"),
-        ApiCode::Ok => unreachable!("成功不会被当错误处理"),
-    }
-}
-
 #[tonic::async_trait]
 impl identity_service_server::IdentityService for IdentityGrpc {
-    async fn register(
+    async fn register_customer(
         &self,
-        request: Request<RegisterRequest>,
-    ) -> Result<Response<RegisterResponse>, Status> {
+        request: Request<RegisterCustomerRequest>,
+    ) -> Result<Response<RegisterCustomerResponse>, Status> {
         let input = request.into_inner();
 
-        let model = register(
+        let result = register(
             &self.db,
             RegisterInput {
                 username: input.username,
@@ -67,30 +72,32 @@ impl identity_service_server::IdentityService for IdentityGrpc {
                 password: input.password,
             },
         )
-        .await
-        .map_err(to_status)?;
+        .await;
 
-        Ok(Response::new(RegisterResponse {
-            id: model.id.to_string(),
-            username: model.username,
-            email: model.email,
-        }))
+        match result {
+            Ok(model) => Ok(Response::new(RegisterCustomerResponse {
+                status: Some(ok_status()),
+                id: model.id.to_string(),
+                username: model.username,
+                email: model.email,
+            })),
+            Err(err) => match business_status(&err) {
+                Some(status) => Ok(Response::new(RegisterCustomerResponse {
+                    status: Some(status),
+                    ..Default::default()
+                })),
+                None => Err(to_status(err)),
+            },
+        }
     }
 
-    async fn login(
+    async fn login_customer(
         &self,
-        request: Request<LoginRequest>,
-    ) -> Result<Response<LoginResponse>, Status> {
+        request: Request<LoginCustomerRequest>,
+    ) -> Result<Response<LoginCustomerResponse>, Status> {
         let input = request.into_inner();
-        let role = to_domain_role(input.role)?;
 
-        // TODO：商户 / 运营登录还没实现（表与 store 待建）。
-        // 在那之前只放行顾客，避免 role 被悄悄忽略。
-        if role != DomainRole::Customer {
-            return Err(Status::unimplemented("该角色登录尚未实现"));
-        }
-
-        let token = login(
+        let result = login(
             &self.db,
             &self.sessions,
             LoginInput {
@@ -98,10 +105,37 @@ impl identity_service_server::IdentityService for IdentityGrpc {
                 password: input.password,
             },
         )
-        .await
-        .map_err(to_status)?;
+        .await;
 
-        Ok(Response::new(LoginResponse { token }))
+        match result {
+            Ok(token) => Ok(Response::new(LoginCustomerResponse {
+                status: Some(ok_status()),
+                token,
+            })),
+            Err(err) => match business_status(&err) {
+                Some(status) => Ok(Response::new(LoginCustomerResponse {
+                    status: Some(status),
+                    ..Default::default()
+                })),
+                None => Err(to_status(err)),
+            },
+        }
+    }
+
+    async fn login_merchant(
+        &self,
+        _request: Request<LoginMerchantRequest>,
+    ) -> Result<Response<LoginMerchantResponse>, Status> {
+        // TODO：merchants / shops 表建好后再实现（§11.4）
+        Err(Status::unimplemented("商户登录尚未实现"))
+    }
+
+    async fn login_operator(
+        &self,
+        _request: Request<LoginOperatorRequest>,
+    ) -> Result<Response<LoginOperatorResponse>, Status> {
+        // TODO：operators 表建好后再实现（§11.5）
+        Err(Status::unimplemented("运营登录尚未实现"))
     }
 
     async fn validate_session(
@@ -122,36 +156,54 @@ impl identity_service_server::IdentityService for IdentityGrpc {
         };
 
         Ok(Response::new(ValidateSessionResponse {
+            status: Some(ok_status()),
             valid,
             user_id,
             role,
         }))
     }
 
-    async fn get_account(
+    async fn get_customer(
         &self,
-        request: Request<GetAccountRequest>,
-    ) -> Result<Response<GetAccountResponse>, Status> {
+        request: Request<GetCustomerRequest>,
+    ) -> Result<Response<GetCustomerResponse>, Status> {
         let input = request.into_inner();
-        let role = to_domain_role(input.role)?;
-
-        // TODO：商户 / 运营查询还没实现（表与 store 待建）
-        if role != DomainRole::Customer {
-            return Err(Status::unimplemented("该角色查询尚未实现"));
-        }
 
         // user_id 来自 gateway（它已经调过 ValidateSession），不是 token
         let id = Uuid::parse_str(&input.user_id)
             .map_err(|_| Status::invalid_argument("user_id 不是合法 UUID"))?;
 
-        let model = me(&self.db, id).await.map_err(to_status)?;
+        match me(&self.db, id).await {
+            Ok(model) => Ok(Response::new(GetCustomerResponse {
+                status: Some(ok_status()),
+                id: model.id.to_string(),
+                username: model.username,
+                email: model.email,
+            })),
+            Err(err) => match business_status(&err) {
+                Some(status) => Ok(Response::new(GetCustomerResponse {
+                    status: Some(status),
+                    ..Default::default()
+                })),
+                None => Err(to_status(err)),
+            },
+        }
+    }
 
-        Ok(Response::new(GetAccountResponse {
-            id: model.id.to_string(),
-            username: model.username,
-            email: model.email,
-            role: to_proto_role(DomainRole::Customer),
-        }))
+    async fn get_merchant(
+        &self,
+        _request: Request<GetMerchantRequest>,
+    ) -> Result<Response<GetMerchantResponse>, Status> {
+        // TODO：merchants 表建好后再实现
+        Err(Status::unimplemented("商户资料查询尚未实现"))
+    }
+
+    async fn get_operator(
+        &self,
+        _request: Request<GetOperatorRequest>,
+    ) -> Result<Response<GetOperatorResponse>, Status> {
+        // TODO：operators 表建好后再实现
+        Err(Status::unimplemented("运营资料查询尚未实现"))
     }
 
     async fn logout(
@@ -160,10 +212,12 @@ impl identity_service_server::IdentityService for IdentityGrpc {
     ) -> Result<Response<LogoutResponse>, Status> {
         let input = request.into_inner();
 
-        let _ = logout(&self.sessions, &input.token)
+        logout(&self.sessions, &input.token)
             .await
             .map_err(to_status)?;
 
-        Ok(Response::new(LogoutResponse {}))
+        Ok(Response::new(LogoutResponse {
+            status: Some(ok_status()),
+        }))
     }
 }

@@ -3,8 +3,10 @@ use axum::{
     http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
-use common::response::ApiResponse;
+use common::response::{ApiResponse, Meta};
 use serde::Serialize;
+
+use crate::grpc::BusinessStatus;
 
 /// 成功响应的 HTTP 包装。
 ///
@@ -28,6 +30,23 @@ impl<T: Serialize> Envelope<T> {
     /// 注册成功用 201（§7），而不是 200。
     pub fn created(data: T) -> Self {
         Self::with_status(StatusCode::CREATED, data)
+    }
+
+    /// 业务失败：HTTP 200 + 响应体里的 code/message，`data` 恒为 null。
+    ///
+    /// 业务状态由 identity 的 `BusinessStatus` 原样带过来，gateway 不重新解释。
+    pub fn business(status: BusinessStatus) -> Self {
+        Self {
+            body: ApiResponse {
+                code: status.code,
+                message: status.message,
+                data: None,
+                meta: Meta::default(),
+                trace_id: String::new(),
+            },
+            status: StatusCode::OK,
+            headers: HeaderMap::new(),
+        }
     }
 
     fn with_status(status: StatusCode, data: T) -> Self {
@@ -105,5 +124,26 @@ mod tests {
 
         assert!(json["data"].is_null(), "body: {json}");
         assert_eq!(json["code"], 0, "body: {json}");
+    }
+
+    /// 业务失败必须是 HTTP 200 + 信封里的 code，不能变成 4xx。
+    #[tokio::test]
+    async fn business_status_uses_200_and_keeps_code() {
+        let status = BusinessStatus {
+            code: 1001,
+            message: "用户名或密码错误".to_owned(),
+        };
+
+        let response = Envelope::<()>::business(status).into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["code"], 1001, "body: {json}");
+        assert_eq!(json["message"], "用户名或密码错误", "body: {json}");
+        assert!(json["data"].is_null(), "body: {json}");
     }
 }

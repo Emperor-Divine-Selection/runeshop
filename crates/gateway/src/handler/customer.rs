@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::ApiError,
-    grpc::{GetAccountRequest, LoginRequest, LogoutRequest, RegisterRequest, Role as ProtoRole},
+    grpc::{GetCustomerRequest, LoginCustomerRequest, LogoutRequest, RegisterCustomerRequest},
     middleware::CurrentUser,
     response::Envelope,
     state::AppState,
@@ -39,13 +39,20 @@ pub async fn register(
     let mut client = state.identity.clone();
 
     let reply = client
-        .register(RegisterRequest {
+        .register_customer(RegisterCustomerRequest {
             username: body.username,
             password: body.password,
             email: body.email,
         })
         .await?
         .into_inner();
+
+    let Some(status) = reply.status else {
+        return Err(ApiError::internal("identity 响应缺少 status"));
+    };
+    if status.code != 0 {
+        return Ok(Envelope::business(status));
+    }
 
     Ok(Envelope::created(RegisterReply {
         id: reply.id,
@@ -62,7 +69,7 @@ pub struct LoginBody {
 
 /// 登录成功只回 `code: 0`（`data: null`）—— 凭据在 Set-Cookie 里。
 ///
-/// 用户信息一律由 `GET /auth/me` 提供：那是唯一入口，登录不再复制一份
+/// 用户信息一律由 `/customer/auth/me` 提供：那是唯一入口，登录不再复制一份
 /// （否则同一个状态有两个来源，迟早漂移）。
 pub async fn login(
     State(state): State<AppState>,
@@ -71,13 +78,23 @@ pub async fn login(
     let mut client = state.identity.clone();
 
     let reply = client
-        .login(LoginRequest {
+        .login_customer(LoginCustomerRequest {
             username: body.username,
             password: body.password,
-            role: ProtoRole::Customer as i32,
         })
         .await?
         .into_inner();
+
+    let Some(status) = reply.status else {
+        return Err(ApiError::internal("identity 响应缺少 status"));
+    };
+    if status.code != 0 {
+        return Ok(Envelope::business(status));
+    }
+
+    if reply.token.is_empty() {
+        return Err(ApiError::internal("identity 返回了空 token"));
+    }
 
     let cookie = Cookie::build(("session", reply.token))
         .http_only(true)
@@ -101,7 +118,18 @@ pub async fn logout(
 ) -> Result<Envelope<()>, ApiError> {
     if let Some(token) = jar.get("session").map(|cookie| cookie.value().to_owned()) {
         let mut client = state.identity.clone();
-        client.logout(LogoutRequest { token }).await?;
+
+        let reply = client
+            .logout(LogoutRequest { token })
+            .await?
+            .into_inner();
+
+        let Some(status) = reply.status else {
+            return Err(ApiError::internal("identity 响应缺少 status"));
+        };
+        if status.code != 0 {
+            return Ok(Envelope::business(status));
+        }
     }
 
     let cleared = Cookie::build(("session", ""))
@@ -120,8 +148,7 @@ pub async fn logout(
 
 /// `/customer/auth/me` 的响应。
 ///
-/// 字段和 `/auth/me` 的规格（§7）一一对应 —— 这是用户信息**唯一**的出口，
-/// 登录只回 `code: 0`。
+/// 字段和 §7 的规格一一对应 —— 这是用户信息**唯一**的出口，登录只回 `code: 0`。
 #[derive(Serialize)]
 pub struct MeReply {
     pub id: String,
@@ -137,12 +164,18 @@ pub async fn me(
     let mut client = state.identity.clone();
 
     let reply = client
-        .get_account(GetAccountRequest {
-            role: ProtoRole::Customer as i32,
+        .get_customer(GetCustomerRequest {
             user_id: current.id, // ← 只能来自 token，不能来自请求参数（§9.1）
         })
         .await?
         .into_inner();
+
+    let Some(status) = reply.status else {
+        return Err(ApiError::internal("identity 响应缺少 status"));
+    };
+    if status.code != 0 {
+        return Ok(Envelope::business(status));
+    }
 
     Ok(Envelope::ok(MeReply {
         id: reply.id,

@@ -2,6 +2,27 @@ syntax = "proto3";
 
 package identity.v1;
 
+// 响应约定（2026-11-22）：
+//   · 每个 Response 的第一个字段都是 BusinessStatus
+//   · 业务失败（凭证错 / 参数不合法 / 重名…）返回 Ok + status.code != 0，
+//     而不是 Err(Status) —— 业务状态由响应体传递
+//   · tonic::Status 只表示传输层故障（服务不可用 / 超时 / 内部错误），
+//     到 gateway 再映射成 4xx / 5xx
+//
+// 接口按角色拆开（2026-11-22）：
+//   · 顾客 / 商户 / 运营各有一套 Login 和 Get，请求里**没有 role 字段**
+//     —— 打哪个 rpc 就是哪个角色，运行时不可能传错
+//   · 三端规则会分叉（商户查店铺状态、运营以后可能要 2FA），共享一个函数会变成
+//     if role == ... 的堆叠；共享的只有原子操作（归一化 / 验密 / token / session）
+//
+// ⚠️ 2026-11-22 字段号整体重置（pre-release，无外部客户端）。
+//    一旦 proto 对外发布，这种重置就永久禁止。
+message BusinessStatus {
+  int32  code    = 1;
+  string message = 2;
+}
+
+// session 里的角色标识（ValidateSession 要回答「你是谁」）
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_CUSTOMER = 1;
@@ -10,38 +31,66 @@ enum Role {
 }
 
 service IdentityService {
-  // 顾客专用 —— 商户走入驻审核（§15 第 1 条），运营由引导超管创建
-  rpc Register(RegisterRequest) returns (RegisterResponse);
-  rpc Login(LoginRequest) returns (LoginResponse);
+  // 顾客专用 —— 商户走入驻审核（§11.4），运营由引导超管创建
+  rpc RegisterCustomer(RegisterCustomerRequest) returns (RegisterCustomerResponse);
+
+  rpc LoginCustomer(LoginCustomerRequest) returns (LoginCustomerResponse);
+  rpc LoginMerchant(LoginMerchantRequest) returns (LoginMerchantResponse);
+  rpc LoginOperator(LoginOperatorRequest) returns (LoginOperatorResponse);
+
+  // 只认 token，没有角色分支 —— 三端共用
   rpc ValidateSession(ValidateSessionRequest) returns (ValidateSessionResponse);
-  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
+
+  rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
+  rpc GetMerchant(GetMerchantRequest) returns (GetMerchantResponse);
+  rpc GetOperator(GetOperatorRequest) returns (GetOperatorResponse);
+
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 }
 
-message RegisterRequest {
+message RegisterCustomerRequest {
   string username = 1;
   string email = 2;
   string password = 3;
 }
 
-message RegisterResponse {
-  string id = 1;
-  string username = 2;
-  string email = 3;
+message RegisterCustomerResponse {
+  BusinessStatus status = 1;
+  string id = 2;
+  string username = 3;
+  string email = 4;
 }
 
-message LoginRequest {
+message LoginCustomerRequest {
   string username = 1;
   string password = 2;
-  Role role = 3;
 }
 
-message LoginResponse {
-  string token = 1;
-  // 2/3 曾是 user_id / role；2026-11-21 删除 —— 登录只发 Set-Cookie，
-  // 用户信息一律走 /auth/me。字段号永久退役。
-  reserved 2, 3;
-  reserved "user_id", "role";
+message LoginCustomerResponse {
+  BusinessStatus status = 1;
+  string token = 2;
+}
+
+// 请求字段现在和顾客一样，但故意独立：商户以后可能要加店铺相关字段，
+// 改这里不会碰到顾客 / 运营的契约
+message LoginMerchantRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginMerchantResponse {
+  BusinessStatus status = 1;
+  string token = 2;
+}
+
+message LoginOperatorRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginOperatorResponse {
+  BusinessStatus status = 1;
+  string token = 2;
 }
 
 message ValidateSessionRequest {
@@ -49,28 +98,57 @@ message ValidateSessionRequest {
 }
 
 message ValidateSessionResponse {
-  bool valid = 1;
-  string user_id = 2;
+  BusinessStatus status = 1;
+  bool valid = 2;
+  string user_id = 3;
   // 无效 session 时是 ROLE_UNSPECIFIED（调用方只看 valid）
-  Role role = 3;
+  Role role = 4;
 }
 
 // user_id 只能由 gateway 从 session 推导后填充，绝不允许来自 HTTP 请求参数。
 // 这是 IDOR 防线（AGENTS.md §9）：handler 里只认 CurrentUser.id，不读请求体里的 id。
-message GetAccountRequest {
-  Role role = 1;
-  string user_id = 2;
+message GetCustomerRequest {
+  string user_id = 1;
 }
 
-message GetAccountResponse {
-  string id = 1;
-  string username = 2;
-  string email = 3;
-  Role role = 4;
+message GetCustomerResponse {
+  BusinessStatus status = 1;
+  string id = 2;
+  string username = 3;
+  string email = 4;
+}
+
+message GetMerchantRequest {
+  string user_id = 1;
+}
+
+message GetMerchantResponse {
+  BusinessStatus status = 1;
+  string id = 2;
+  string username = 3;
+  string email = 4;
+  string shop_id = 5;
+  string shop_name = 6;
+  // 权限码（common::permission::Permission 的字符串形式）
+  repeated string permissions = 7;
+}
+
+message GetOperatorRequest {
+  string user_id = 1;
+}
+
+message GetOperatorResponse {
+  BusinessStatus status = 1;
+  string id = 2;
+  string username = 3;
+  string email = 4;
+  repeated string permissions = 5;
 }
 
 message LogoutRequest {
   string token = 1;
 }
 
-message LogoutResponse {}
+message LogoutResponse {
+  BusinessStatus status = 1;
+}

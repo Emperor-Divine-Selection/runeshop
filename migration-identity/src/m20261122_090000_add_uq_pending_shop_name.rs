@@ -11,13 +11,11 @@ impl MigrationName for Migration {
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // 店名和用户名一样：只在「待审」之间互斥，被拒后可以再申请
         manager
             .get_connection()
-            .execute_unprepared(
-                "CREATE UNIQUE INDEX uq_pending_shop_name
-                 ON merchant_applications (shop_name) WHERE status = 'pending'",
-            )
+            .execute_unprepared(include_str!(
+                "../sql/m20261122_090000_add_uq_pending_shop_name.up.sql"
+            ))
             .await?;
         Ok(())
     }
@@ -25,7 +23,9 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .get_connection()
-            .execute_unprepared("DROP INDEX uq_pending_shop_name")
+            .execute_unprepared(include_str!(
+                "../sql/m20261122_090000_add_uq_pending_shop_name.down.sql"
+            ))
             .await?;
         Ok(())
     }

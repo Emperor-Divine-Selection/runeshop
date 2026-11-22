@@ -13,18 +13,9 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .get_connection()
-            .execute_unprepared(
-                r#"
-                CREATE TABLE customers (
-                    id            uuid PRIMARY KEY,
-                    created_at    timestamptz NOT NULL DEFAULT now(),
-                    updated_at    timestamptz NOT NULL DEFAULT now(),
-                    username      varchar(32)  NOT NULL UNIQUE,
-                    password_hash varchar(255) NOT NULL,
-                    email         varchar(255) NOT NULL UNIQUE
-                )
-                "#,
-            )
+            .execute_unprepared(include_str!(
+                "../sql/m20261113_140503_create_table_customers.up.sql"
+            ))
             .await?;
         Ok(())
     }
@@ -32,7 +23,9 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .get_connection()
-            .execute_unprepared("DROP TABLE customers")
+            .execute_unprepared(include_str!(
+                "../sql/m20261113_140503_create_table_customers.down.sql"
+            ))
             .await?;
         Ok(())
     }
