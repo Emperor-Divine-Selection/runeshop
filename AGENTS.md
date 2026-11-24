@@ -431,6 +431,9 @@ type Api<T> = { code: number; message: string; data: T | null; meta: Meta; trace
 - `200 + code:0`（**不是 204**）
 - **幂等**：token 有效无效都成功
 - 同时 `Set-Cookie: session_customer=; Max-Age=0`
+- **identity 不可用时也返回 200 + 清 Cookie**：`DEL` 是尽力而为，失败只记日志。
+  理由：用户必须能登出；`DEL` 失败时 session 活到 TTL，但客户端已丢弃 Cookie，
+  只剩被偷的 token 才有风险
 
 ### 商户端接口（2026-11-23 补）
 

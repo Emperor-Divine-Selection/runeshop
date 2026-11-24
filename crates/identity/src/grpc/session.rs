@@ -33,7 +33,7 @@ pub(super) async fn validate_session(
     }))
 }
 
-pub(super) async fn logout(
+pub async fn logout(
     grpc: &IdentityState,
     request: Request<LogoutRequest>,
 ) -> Result<Response<LogoutResponse>, Status> {

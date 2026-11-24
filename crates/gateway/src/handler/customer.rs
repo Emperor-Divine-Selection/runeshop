@@ -99,19 +99,32 @@ pub async fn logout(
     State(state): State<GatewayState>,
     jar: CookieJar,
 ) -> Result<Envelope<()>, ApiError> {
+    // 尽力删服务端 session：失败只记日志，不能让用户「登不出去」
     if let Some(token) = jar
         .get(session_cookie_name(Role::Customer))
         .map(|cookie| cookie.value().to_owned())
     {
         let mut client = state.identity.clone();
 
-        let reply = client.logout(LogoutRequest { token }).await?.into_inner();
-
-        let Some(status) = reply.status else {
-            return Err(ApiError::internal("identity 响应缺少 status"));
-        };
-        if status.code != 0 {
-            return Ok(Envelope::business(status));
+        match client.logout(LogoutRequest { token }).await {
+            Ok(response) => match response.into_inner().status {
+                Some(status) if status.code != 0 => {
+                    tracing::warn!(
+                        code = status.code,
+                        message = %status.message,
+                        "identity 登出返回业务错误"
+                    );
+                }
+                None => tracing::warn!("identity 登出响应缺少 status"),
+                Some(_) => {}
+            },
+            Err(status) => {
+                tracing::error!(
+                    grpc_code = ?status.code(),
+                    message = status.message(),
+                    "调用 identity 登出失败"
+                );
+            }
         }
     }
 
