@@ -8,7 +8,7 @@ use super::{
     ValidateSessionResponse, ok_status, to_proto_role, to_transport_status,
 };
 
-pub(super) async fn validate_session(
+pub async fn validate_session(
     grpc: &IdentityState,
     request: Request<ValidateSessionRequest>,
 ) -> Result<Response<ValidateSessionResponse>, Status> {

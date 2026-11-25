@@ -99,37 +99,41 @@ pub async fn logout(
     State(state): State<GatewayState>,
     jar: CookieJar,
 ) -> Result<Envelope<()>, ApiError> {
-    // 尽力删服务端 session：失败只记日志，不能让用户「登不出去」
+    // 1. 先把「清 Cookie」准备好 —— 客户端的登出不等缓存
+    let value = build_clear_cookie(Role::Customer)?;
+
+    // 2. 服务端 session 丢到后台删：不阻塞响应，失败只记日志
     if let Some(token) = jar
         .get(session_cookie_name(Role::Customer))
         .map(|cookie| cookie.value().to_owned())
     {
         let mut client = state.identity.clone();
 
-        match client.logout(LogoutRequest { token }).await {
-            Ok(response) => match response.into_inner().status {
-                Some(status) if status.code != 0 => {
-                    tracing::warn!(
-                        code = status.code,
-                        message = %status.message,
-                        "identity 登出返回业务错误"
+        tokio::spawn(async move {
+            match client.logout(LogoutRequest { token }).await {
+                Ok(response) => match response.into_inner().status {
+                    Some(status) if status.code != 0 => {
+                        tracing::warn!(
+                            code = status.code,
+                            message = %status.message,
+                            "identity 登出返回业务错误"
+                        );
+                    }
+                    None => tracing::warn!("identity 登出响应缺少 status"),
+                    Some(_) => {}
+                },
+                Err(status) => {
+                    tracing::error!(
+                        grpc_code = ?status.code(),
+                        message = status.message(),
+                        "调用 identity 登出失败"
                     );
                 }
-                None => tracing::warn!("identity 登出响应缺少 status"),
-                Some(_) => {}
-            },
-            Err(status) => {
-                tracing::error!(
-                    grpc_code = ?status.code(),
-                    message = status.message(),
-                    "调用 identity 登出失败"
-                );
             }
-        }
+        });
     }
 
-    let value = build_clear_cookie(Role::Customer)?;
-
+    // 3. 立即返回：200 + 清 Cookie
     Ok(Envelope::ok(()).header(SET_COOKIE, value))
 }
 

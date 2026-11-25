@@ -9,7 +9,7 @@ use super::{
     LoginMerchantResponse, ok_status, to_business_status, to_transport_status,
 };
 
-pub(super) async fn login_merchant(
+pub async fn login_merchant(
     grpc: &IdentityState,
     request: Request<LoginMerchantRequest>,
 ) -> Result<Response<LoginMerchantResponse>, Status> {
@@ -40,7 +40,7 @@ pub(super) async fn login_merchant(
     }
 }
 
-pub(super) async fn get_merchant(
+pub async fn get_merchant(
     grpc: &IdentityState,
     request: Request<GetMerchantRequest>,
 ) -> Result<Response<GetMerchantResponse>, Status> {

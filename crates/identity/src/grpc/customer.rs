@@ -10,7 +10,7 @@ use super::{
     to_business_status, to_transport_status,
 };
 
-pub(super) async fn register_customer(
+pub async fn register_customer(
     grpc: &IdentityState,
     request: Request<RegisterCustomerRequest>,
 ) -> Result<Response<RegisterCustomerResponse>, Status> {
@@ -43,7 +43,7 @@ pub(super) async fn register_customer(
     }
 }
 
-pub(super) async fn login_customer(
+pub async fn login_customer(
     grpc: &IdentityState,
     request: Request<LoginCustomerRequest>,
 ) -> Result<Response<LoginCustomerResponse>, Status> {
@@ -74,7 +74,7 @@ pub(super) async fn login_customer(
     }
 }
 
-pub(super) async fn get_customer(
+pub async fn get_customer(
     grpc: &IdentityState,
     request: Request<GetCustomerRequest>,
 ) -> Result<Response<GetCustomerResponse>, Status> {

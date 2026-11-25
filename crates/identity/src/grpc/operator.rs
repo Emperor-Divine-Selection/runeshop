@@ -5,7 +5,7 @@ use super::{
     LoginOperatorResponse,
 };
 
-pub(super) async fn login_operator(
+pub async fn login_operator(
     _grpc: &IdentityState,
     _request: Request<LoginOperatorRequest>,
 ) -> Result<Response<LoginOperatorResponse>, Status> {
@@ -13,7 +13,7 @@ pub(super) async fn login_operator(
     Err(Status::unimplemented("运营登录尚未实现"))
 }
 
-pub(super) async fn get_operator(
+pub async fn get_operator(
     _grpc: &IdentityState,
     _request: Request<GetOperatorRequest>,
 ) -> Result<Response<GetOperatorResponse>, Status> {
