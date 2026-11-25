@@ -1,0 +1,130 @@
+use axum::{Extension, Json, extract::State, http::header::SET_COOKIE};
+use axum_extra::extract::CookieJar;
+use common::role::Role;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    cookie::{build_clear_cookie, build_session_cookie, session_cookie_name},
+    error::ApiError,
+    grpc::{GetOperatorRequest, LoginOperatorRequest, LogoutRequest},
+    middleware::CurrentUser,
+    response::Envelope,
+    state::GatewayState,
+};
+
+#[derive(Deserialize)]
+pub struct LoginBody {
+    pub username: String,
+    pub password: String,
+}
+
+/// 运营登录：成功只回 `code: 0`，凭据在 `session_operator` Cookie 里。
+pub async fn login(
+    State(state): State<GatewayState>,
+    Json(body): Json<LoginBody>,
+) -> Result<Envelope<()>, ApiError> {
+    let mut client = state.identity.clone();
+
+    let reply = client
+        .login_operator(LoginOperatorRequest {
+            username: body.username,
+            password: body.password,
+        })
+        .await?
+        .into_inner();
+
+    let Some(status) = reply.status else {
+        return Err(ApiError::internal("identity 响应缺少 status"));
+    };
+    if status.code != 0 {
+        return Ok(Envelope::business(status));
+    }
+
+    if reply.token.is_empty() {
+        return Err(ApiError::internal("identity 返回了空 token"));
+    }
+
+    let value = build_session_cookie(Role::Operator, reply.token, state.session_ttl_seconds)?;
+
+    Ok(Envelope::ok(()).header(SET_COOKIE, value))
+}
+
+pub async fn logout(
+    State(state): State<GatewayState>,
+    jar: CookieJar,
+) -> Result<Envelope<()>, ApiError> {
+    // 1. 先把「清 Cookie」准备好 —— 客户端的登出不等缓存
+    let value = build_clear_cookie(Role::Operator)?;
+
+    // 2. 服务端 session 丢到后台删：不阻塞响应，失败只记日志
+    if let Some(token) = jar
+        .get(session_cookie_name(Role::Operator))
+        .map(|cookie| cookie.value().to_owned())
+    {
+        let mut client = state.identity.clone();
+
+        tokio::spawn(async move {
+            match client.logout(LogoutRequest { token }).await {
+                Ok(response) => match response.into_inner().status {
+                    Some(status) if status.code != 0 => {
+                        tracing::warn!(
+                            code = status.code,
+                            message = %status.message,
+                            "identity 登出返回业务错误"
+                        );
+                    }
+                    None => tracing::warn!("identity 登出响应缺少 status"),
+                    Some(_) => {}
+                },
+                Err(status) => {
+                    tracing::error!(
+                        grpc_code = ?status.code(),
+                        message = status.message(),
+                        "调用 identity 登出失败"
+                    );
+                }
+            }
+        });
+    }
+
+    // 3. 立即返回：200 + 清 Cookie
+    Ok(Envelope::ok(()).header(SET_COOKIE, value))
+}
+
+#[derive(Serialize)]
+pub struct MeReply {
+    pub id: String,
+    pub username: String,
+    pub email: String,
+    pub role: String,
+    pub permissions: Vec<String>,
+}
+
+pub async fn me(
+    State(state): State<GatewayState>,
+    Extension(current): Extension<CurrentUser>,
+) -> Result<Envelope<MeReply>, ApiError> {
+    let mut client = state.identity.clone();
+
+    let reply = client
+        .get_operator(GetOperatorRequest {
+            user_id: current.id, // ← 只能来自 token（§9.1）
+        })
+        .await?
+        .into_inner();
+
+    let Some(status) = reply.status else {
+        return Err(ApiError::internal("identity 响应缺少 status"));
+    };
+    if status.code != 0 {
+        return Ok(Envelope::business(status));
+    }
+
+    Ok(Envelope::ok(MeReply {
+        id: reply.id,
+        username: reply.username,
+        email: reply.email,
+        role: current.role.as_str().to_owned(),
+        permissions: reply.permissions,
+    }))
+}

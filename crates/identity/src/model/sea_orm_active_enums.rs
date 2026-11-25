@@ -30,3 +30,12 @@ pub enum ShopStatus {
     #[sea_orm(string_value = "frozen")]
     Frozen,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "Enum", db_type = "Enum", enum_name = "operator_status")]
+pub enum OperatorStatus {
+    #[sea_orm(string_value = "active")]
+    Active,
+    #[sea_orm(string_value = "disabled")]
+    Disabled,
+}

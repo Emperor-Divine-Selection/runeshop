@@ -2,6 +2,7 @@ pub mod credential;
 pub mod customer;
 pub mod error;
 pub mod merchant;
+pub mod operator;
 pub mod normalize;
 pub mod validate;
 

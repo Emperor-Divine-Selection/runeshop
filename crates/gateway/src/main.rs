@@ -22,10 +22,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log_init("gateway");
 
     let session_ttl_seconds: u64 = std::env::var("SESSION_TTL_SECONDS")?.parse()?;
+    let identity_url = std::env::var("IDENTITY_GRPC_URL")?;
 
     // 没有超时的话：identity 活着但卡住（例如数据库连接不上），gateway 会无限期等待，
     // 前端只能一直转圈，比直接 500 更难排查
-    let channel = Channel::from_static("http://127.0.0.1:50051")
+    let channel = Channel::from_shared(identity_url)?
         .timeout(Duration::from_secs(3))
         .connect()
         .await?;

@@ -7,5 +7,8 @@ pub mod merchant_applications;
 pub mod merchant_role_permissions;
 pub mod merchant_roles;
 pub mod merchants;
+pub mod operator_role_permissions;
+pub mod operator_roles;
+pub mod operators;
 pub mod shops;
 pub mod sea_orm_active_enums;

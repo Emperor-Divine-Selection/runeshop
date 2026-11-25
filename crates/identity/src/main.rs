@@ -20,8 +20,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let database_url = std::env::var("POSTGRES_URL_IDENTITY")?;
     let valkey_url = std::env::var("VALKEY_URL")?;
     let ttl_seconds = std::env::var("SESSION_TTL_SECONDS")?;
+    let grpc_addr = std::env::var("IDENTITY_GRPC_ADDR")?;
 
     let db = Database::connect(&database_url).await?;
+
+    // 幂等：operators 非空就跳过；没配 BOOTSTRAP_ADMIN_* 只记 warn
+    crate::service::operator::bootstrap_super_admin(&db).await?;
+
     let ttl = ttl_seconds.parse::<u64>()?;
     let sessions = SessionStore::connect(&valkey_url, ttl).await?;
 
@@ -32,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )))
         .build_v1()?;
 
-    let addr: std::net::SocketAddr = "0.0.0.0:50051".parse()?;
+    let addr: std::net::SocketAddr = grpc_addr.parse()?;
 
     Server::builder()
         .add_service(IdentityServiceServer::new(IdentityState { db, sessions }))

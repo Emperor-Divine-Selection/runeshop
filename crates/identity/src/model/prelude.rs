@@ -6,3 +6,6 @@ pub use super::merchant_role_permissions::Entity as MerchantRolePermissions;
 pub use super::merchant_roles::Entity as MerchantRoles;
 pub use super::merchants::Entity as Merchants;
 pub use super::shops::Entity as Shops;
+pub use super::operator_role_permissions::Entity as OperatorRolePermissions;
+pub use super::operator_roles::Entity as OperatorRoles;
+pub use super::operators::Entity as Operators;

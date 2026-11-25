@@ -22,7 +22,9 @@
 带 Cookie 能拿到 `{id, username, email, role}`，登出后再访问 `/me` 返 `200 + code:1002`。**
 
 **2026-11-23：商户端登录 / 资料已打通（identity + gateway），Cookie 已按端拆分
-（`session_customer` / `session_merchant`）；运营侧待做。**
+（`session_customer` / `session_merchant`）。**
+
+**2026-11-26：运营端登录 / 资料也打通（bootstrap 建第一个超管），三端认证全部完成。**
 
 2026-11-12 的定稿推翻了 11-11 晚那版骨架的四条口径：
 
@@ -445,6 +447,17 @@ type Api<T> = { code: number; message: string; data: T | null; meta: Meta; trace
 
 `permissions`：owner 返回 `["*"]`（全部权限），staff 返回真实权限码。
 
+### 运营端接口（2026-11-26 补）
+
+| 接口 | 成功 | 失败 |
+|---|---|---|
+| `POST /operator/auth/login` | `200 + code:0` + `session_operator` Cookie | `200 + 1001`（密码错 / 未激活）、`200 + 1002`（账号停用） |
+| `GET /operator/auth/me` | `200 + {id, username, email, role, permissions}` | `200 + 1002`（未登录 / 跨端） |
+| `POST /operator/auth/logout` | `200 + code:0`，清 `session_operator` | —— |
+
+`permissions`：super_admin 返回 `["*"]`，reviewer 返回真实权限码。
+第一个超管由 bootstrap 创建（`BOOTSTRAP_ADMIN_*`，operators 非空则跳过）。
+
 > 顺序纪律：**先算 token，再判状态，最后才写外部系统**。
 > 反例见踩坑 78 —— 副作用写在判定之前，登录失败却在 Valkey 留了个 24h 的孤儿 token。
 
@@ -640,7 +653,7 @@ curl -i -b /tmp/ck localhost:8080/customer/auth/me                  # 200 + code
 
 | 库 | 表 |
 |---|---|
-| `identity_db` | `customers`、`merchants`、`operators`、`shops`、`merchant_applications`、`roles`、`role_permissions`、`merchant_roles`、`merchant_role_permissions` |
+| `identity_db` | `customers`、`merchants`、`operators`、`shops`、`merchant_applications`、`operator_roles`、`operator_role_permissions`、`merchant_roles`、`merchant_role_permissions` |
 | `catalog_db` | `products`、`product_kinds`、`product_items`、`product_prices` |
 | `order_db` | `orders`、`order_items`、**`product_inventory`** |
 
@@ -743,7 +756,7 @@ created_at / updated_at`；`reviewed_*` 可空无默认（踩坑 97），一条 
 
 | 端 | 组表 | 组-权限 | 人挂组 |
 |---|---|---|---|
-| 运营 | `roles` | `role_permissions (role_id, permission)` | `operators.role_id` |
+| 运营 | `operator_roles` | `operator_role_permissions (role_id, permission)` | `operators.role_id` |
 | 商户 | `merchant_roles` | `merchant_role_permissions (role_id, permission)` | `merchants.role_id` |
 
 - **权限是字符串码**（`merchant_application.review` / `product.manage`），Rust 侧用
@@ -811,6 +824,8 @@ POSTGRES_URL_CATALOG=postgres://runeshop:runeshop@localhost:5432/catalog_db
 POSTGRES_URL_ORDER=postgres://runeshop:runeshop@localhost:5432/order_db
 VALKEY_URL=redis://localhost:6379
 SESSION_TTL_SECONDS=86400
+IDENTITY_GRPC_ADDR=127.0.0.1:50051
+IDENTITY_GRPC_URL=http://127.0.0.1:50051
 ```
 
 - **代码里 `env::var("X")` 的 X 必须和这里一字不差**（踩坑 7）
@@ -918,11 +933,11 @@ ApiError       只负责传输层：gRPC Status → HTTP status，impl IntoRespo
             **步 7 gateway ✅：register / login / me / logout（auth 中间件 + Set-Cookie 四属性）**、
             **步 8 `curl` 四连 ✅**（无 Cookie / 伪造 token → 200 + 1002；登出后 `/me` 同样）
       验收：§10 第 6 步 `grpcurl` 四连 + 第 8 步 `curl` 四连全过
-- [ ] **2. 把第一刀的同一套实现用到 `merchants` / `operators`**（当前）← 下一个动作
-      进度：表 ✅（shops / merchant_roles / merchant_role_permissions / merchants）；
-            identity 商户 login / me ✅；gateway `/merchant/auth/*` ✅（Cookie 按端拆分）；运营侧 ⬜
+- [x] **2. 把第一刀的同一套实现用到 `merchants` / `operators`** ✅ 2026-11-26
+      进度：三端 login / me / logout 全通（identity + gateway）；
+            运营由 bootstrap 建第一个超管；Cookie 按端拆分（session_* 三个名字）
       验收：顾客 register / login；三端 login / me / logout 都通，`role` 各自正确（踩坑 94）
-- [ ] **3. 商户入驻审核**（设计已定，见 §11.4；等商户端登录跑通再做）
+- [ ] **3. 商户入驻审核**（当前，设计见 §11.4）← 下一个动作
 - [ ] **4. 商品写**：建商品（catalog），`shop_id` 从 metadata 取（操作者 `merchant_id` 一并带上，用于审计）
 - [ ] **5. 商品读**：列表 / 详情 —— 第一次真的**不能 JOIN 店铺名**
 - [ ] **6. 库存 + 读聚合**：`GET /stock?skus=...` 批量 + gateway 三态降级（§11.2）
