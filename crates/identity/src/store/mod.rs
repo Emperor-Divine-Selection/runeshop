@@ -1,6 +1,7 @@
 pub mod customer;
 pub mod error;
 pub mod merchant;
+pub mod merchant_application;
 pub mod operator;
 pub mod operator_role;
 pub mod operator_role_permission;

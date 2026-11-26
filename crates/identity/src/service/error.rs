@@ -34,6 +34,10 @@ pub enum ServiceError {
     #[error("[Technical] {0}")]
     Internal(String),
 
+    /// 状态已经变了（申请单被别人审过、记录已删除）—— 客户端应刷新
+    #[error("[StateChanged] {0}")]
+    StateChanged(String),
+
     /// 凭证错误：登录时用户名不存在 **或** 密码不匹配。
     /// 两条分支必须共用这一个变体，否则等于送给攻击者一个用户枚举接口（踩坑 51）。
     #[error("[InvalidCredentials] {0}")]
@@ -58,6 +62,7 @@ impl ServiceError {
             Self::Token(_) => ApiCode::Internal,
             Self::Cache(_) => ApiCode::Internal,
             Self::Internal(_) => ApiCode::Internal,
+            Self::StateChanged(_) => ApiCode::StateChanged,
             Self::InvalidCredentials(_) => ApiCode::InvalidCredentials,
             Self::Unauthorized(_) => ApiCode::Unauthorized,
         }
@@ -81,6 +86,7 @@ impl ServiceError {
             | Self::Internal(_) => {
                 "服务暂时不可用"
             }
+            Self::StateChanged(msg) => msg,
         }
     }
 }

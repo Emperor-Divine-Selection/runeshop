@@ -57,3 +57,16 @@ pub fn validate_password(password: &str) -> Result<(), ServiceError> {
 
     Ok(())
 }
+
+/// 店铺名 2–64 个字符（trim 之后）。
+pub fn validate_shop_name(shop_name: &str) -> Result<(), ServiceError> {
+    let len = shop_name.chars().count();
+
+    if len < 2 || len > 64 {
+        return Err(ServiceError::InvalidParams(
+            "店铺名长度需在 2-64 个字符之间".to_owned(),
+        ));
+    }
+
+    Ok(())
+}

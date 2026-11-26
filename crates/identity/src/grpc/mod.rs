@@ -7,6 +7,7 @@ use tonic::{Request, Response, Status};
 use crate::service::credential::session::SessionStore;
 use crate::service::error::ServiceError;
 
+mod application;
 mod customer;
 mod merchant;
 mod operator;
@@ -90,6 +91,34 @@ impl identity_service_server::IdentityService for IdentityState {
         request: Request<LogoutRequest>,
     ) -> Result<Response<LogoutResponse>, Status> {
         session::logout(self, request).await
+    }
+
+    async fn submit_merchant_application(
+        &self,
+        request: Request<SubmitMerchantApplicationRequest>,
+    ) -> Result<Response<SubmitMerchantApplicationResponse>, Status> {
+        application::submit_merchant_application(self, request).await
+    }
+
+    async fn list_merchant_applications(
+        &self,
+        request: Request<ListMerchantApplicationsRequest>,
+    ) -> Result<Response<ListMerchantApplicationsResponse>, Status> {
+        application::list_merchant_applications(self, request).await
+    }
+
+    async fn approve_merchant_application(
+        &self,
+        request: Request<ApproveMerchantApplicationRequest>,
+    ) -> Result<Response<ApproveMerchantApplicationResponse>, Status> {
+        application::approve_merchant_application(self, request).await
+    }
+
+    async fn reject_merchant_application(
+        &self,
+        request: Request<RejectMerchantApplicationRequest>,
+    ) -> Result<Response<RejectMerchantApplicationResponse>, Status> {
+        application::reject_merchant_application(self, request).await
     }
 }
 

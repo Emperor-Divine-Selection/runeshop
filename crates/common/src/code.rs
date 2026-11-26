@@ -6,6 +6,8 @@ pub enum ApiCode {
     Unauthorized = 1002,
     InvalidParams = 1003,
     Conflict = 1004,
+    NoPermission = 1005,
+    StateChanged = 1006,
     Internal = 5000,
 }
 
@@ -20,6 +22,8 @@ mod tests {
         assert_eq!(ApiCode::Unauthorized as i32, 1002);
         assert_eq!(ApiCode::InvalidParams as i32, 1003);
         assert_eq!(ApiCode::Conflict as i32, 1004);
+        assert_eq!(ApiCode::NoPermission as i32, 1005);
+        assert_eq!(ApiCode::StateChanged as i32, 1006);
         assert_eq!(ApiCode::Internal as i32, 5000);
     }
 }

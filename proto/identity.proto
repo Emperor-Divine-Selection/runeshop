@@ -30,6 +30,13 @@ enum Role {
   ROLE_OPERATOR = 3;
 }
 
+enum ApplicationStatus {
+  APPLICATION_STATUS_UNSPECIFIED = 0;
+  APPLICATION_STATUS_PENDING     = 1;
+  APPLICATION_STATUS_APPROVED    = 2;
+  APPLICATION_STATUS_REJECTED    = 3;
+}
+
 service IdentityService {
   // 顾客专用 —— 商户走入驻审核（§11.4），运营由引导超管创建
   rpc RegisterCustomer(RegisterCustomerRequest) returns (RegisterCustomerResponse);
@@ -44,6 +51,12 @@ service IdentityService {
   rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
   rpc GetMerchant(GetMerchantRequest) returns (GetMerchantResponse);
   rpc GetOperator(GetOperatorRequest) returns (GetOperatorResponse);
+
+  // 商户入驻（§11.4）
+  rpc SubmitMerchantApplication(SubmitMerchantApplicationRequest) returns (SubmitMerchantApplicationResponse);
+  rpc ListMerchantApplications(ListMerchantApplicationsRequest)   returns (ListMerchantApplicationsResponse);
+  rpc ApproveMerchantApplication(ApproveMerchantApplicationRequest) returns (ApproveMerchantApplicationResponse);
+  rpc RejectMerchantApplication(RejectMerchantApplicationRequest)   returns (RejectMerchantApplicationResponse);
 
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 }
@@ -150,5 +163,62 @@ message LogoutRequest {
 }
 
 message LogoutResponse {
+  BusinessStatus status = 1;
+}
+
+message MerchantApplication {
+  string            id          = 1;
+  string            shop_name   = 2;
+  string            username    = 3;
+  string            email       = 4;
+  ApplicationStatus status      = 5;
+  string            review_note = 6;
+  string            created_at  = 7;   // RFC3339 UTC
+  string            reviewed_at = 8;   // 空串 = 未审核
+}
+
+message SubmitMerchantApplicationRequest {
+  string shop_name = 1;
+  string username  = 2;
+  string email     = 3;
+}
+
+message SubmitMerchantApplicationResponse {
+  BusinessStatus status = 1;
+  string         id     = 2;
+}
+
+message ListMerchantApplicationsRequest {
+  ApplicationStatus status    = 1;   // UNSPECIFIED = 全部
+  uint32            page      = 2;
+  uint32            page_size = 3;
+}
+
+message ListMerchantApplicationsResponse {
+  BusinessStatus              status       = 1;
+  repeated MerchantApplication applications = 2;
+  uint64                      total        = 3;
+  uint32                      page         = 4;
+  uint32                      page_size    = 5;
+}
+
+// application_id 来自 URL；reviewer_id 只能由 gateway 从 token 填充（IDOR，§9.1）
+message ApproveMerchantApplicationRequest {
+  string application_id = 1;
+  string reviewer_id    = 2;
+}
+
+message ApproveMerchantApplicationResponse {
+  BusinessStatus status      = 1;
+  string         merchant_id = 2;
+}
+
+message RejectMerchantApplicationRequest {
+  string application_id = 1;
+  string reviewer_id    = 2;
+  string note           = 3;
+}
+
+message RejectMerchantApplicationResponse {
   BusinessStatus status = 1;
 }

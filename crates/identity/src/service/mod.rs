@@ -1,3 +1,4 @@
+pub mod application;
 pub mod credential;
 pub mod customer;
 pub mod error;
